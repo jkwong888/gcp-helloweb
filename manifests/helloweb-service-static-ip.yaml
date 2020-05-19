@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    cloud.google.com/neg: '{"exposed_ports": {"80":{}}}'
+  name: helloweb
+  labels:
+    app: hello
+spec:
+  selector:
+    app: hello
+    tier: web
+  ports:
+  - port: 80
+    targetPort: 8080

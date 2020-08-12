@@ -23,11 +23,18 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+//	"net/http/httptest"
+	"time"
 	"os"
 	"strings"
+
+	"contrib.go.opencensus.io/exporter/prometheus"
+	"go.opencensus.io/plugin/ochttp"
+	"go.opencensus.io/stats/view"
+	"github.com/heptiolabs/healthcheck"
 )
 
-func getMetaData(ctx context.Context, path string) string {
+func getMetaData(ctx context.Context, path string) *string {
 	metaDataURL := "http://metadata/computeMetadata/v1/"
 	req, _ := http.NewRequest(
 		"GET",
@@ -36,12 +43,20 @@ func getMetaData(ctx context.Context, path string) string {
 	)
 	req.Header.Add("Metadata-Flavor", "Google")
 	req = req.WithContext(ctx)
-	return string(makeRequest(req))
+	code, body := makeRequest(req)
+
+	if (code == 200) {
+		bodyStr := string(body)
+		return &bodyStr
+	}
+
+	return nil
 }
 
-func makeRequest(r *http.Request) []byte {
-	transport := http.Transport{DisableKeepAlives: true}
-	client := &http.Client{Transport: &transport}
+func makeRequest(r *http.Request) (int, []byte) {
+	//transport := http.Transport{DisableKeepAlives: true}
+	octr := &ochttp.Transport{}
+	client := &http.Client{Transport: octr}
 	resp, err := client.Do(r)
 	if err != nil {
 		message := "Unable to call backend: " + err.Error()
@@ -52,23 +67,97 @@ func makeRequest(r *http.Request) []byte {
 		message := "Unable to read response body: " + err.Error()
 		panic(message)
 	}
-	return body
+
+	return resp.StatusCode, body
+}
+
+func enableObservabilityAndExporters(mux *http.ServeMux) {
+	// Stats exporter: Prometheus
+	pe, err := prometheus.NewExporter(prometheus.Options{
+		Namespace: "helloweb",
+	})
+	if err != nil {
+		log.Fatalf("Failed to create the Prometheus stats exporter: %v", err)
+	}
+
+	view.RegisterExporter(pe)
+
+	mux.Handle("/metrics", pe)
+
+	/*
+	// Trace exporter: Zipkin
+	localEndpoint, err := openzipkin.NewEndpoint("ochttp_tutorial", "localhost:5454")
+	if err != nil {
+		log.Fatalf("Failed to create the local zipkinEndpoint: %v", err)
+	}
+	reporter := zipkinHTTP.NewReporter("http://localhost:9411/api/v2/spans")
+	ze := zipkin.NewExporter(reporter, localEndpoint)
+	trace.RegisterExporter(ze)
+	trace.ApplyConfig(trace.Config{DefaultSampler: trace.AlwaysSample()})
+	*/
+}
+
+func enableHealthCheck(mux *http.ServeMux) {
+
+	// add health check 
+	health := healthcheck.NewHandler()
+
+	metaDataURL := "http://metadata/computeMetadata/v1/"
+	health.AddReadinessCheck(
+		"upstream-dep-http",
+		healthcheck.HTTPGetCheck(metaDataURL, 500*time.Millisecond))
+	health.AddLivenessCheck(
+		"upstream-dep-http",
+		healthcheck.HTTPGetCheck(metaDataURL, 500*time.Millisecond))
+
+
+	mux.HandleFunc("/healthz", health.ReadyEndpoint)
+
+	/*
+	// Trace exporter: Zipkin
+	localEndpoint, err := openzipkin.NewEndpoint("ochttp_tutorial", "localhost:5454")
+	if err != nil {
+		log.Fatalf("Failed to create the local zipkinEndpoint: %v", err)
+	}
+	reporter := zipkinHTTP.NewReporter("http://localhost:9411/api/v2/spans")
+	ze := zipkin.NewExporter(reporter, localEndpoint)
+	trace.RegisterExporter(ze)
+	trace.ApplyConfig(trace.Config{DefaultSampler: trace.AlwaysSample()})
+	*/
 }
 
 func main() {
+
+	// Firstly, we'll register ochttp Server views.
+	if err := view.Register(ochttp.DefaultServerViews...); err != nil {
+		log.Fatalf("Failed to register server views for HTTP metrics: %v", err)
+	}
+
+	if err := view.Register(ochttp.DefaultClientViews...); err != nil {
+		log.Fatal("Failed to register client views for HTTP metrics: %v", err)
+	}
+
 	// use PORT environment variable, or default to 8080
 	port := "8080"
 	if fromEnv := os.Getenv("PORT"); fromEnv != "" {
 		port = fromEnv
 	}
 
-	// register hello function to handle all requests
-	server := http.NewServeMux()
-	server.HandleFunc("/", hello)
+	mux := http.NewServeMux()
+
+	// Enable observability, add /metrics endpoint to extract and examine stats.
+	enableObservabilityAndExporters(mux)
+
+	// Enable health check /healthz endpoint
+	enableHealthCheck(mux)
+
+	mux.HandleFunc("/", http.HandlerFunc(hello))
+
+	h := &ochttp.Handler{Handler: mux}
 
 	// start the web server on port and accept requests
 	log.Printf("Server listening on port %s", port)
-	err := http.ListenAndServe(":"+port, server)
+	err := http.ListenAndServe(":"+port, h)
 	log.Fatal(err)
 }
 
@@ -85,17 +174,31 @@ func hello(w http.ResponseWriter, r *http.Request) {
 	project := getMetaData(ctx, "project/project-id")
 	//internalIP := getMetaData(ctx, "instance/network-interfaces/0/ip")
 
-	zoneArr := strings.Split(zoneStr, "/")
-	zone := zoneArr[len(zoneArr)-1]
 
 	fmt.Fprintf(w, "Hello, world!\n")
 	fmt.Fprintf(w, "Version: 1.0.0\n")
 	fmt.Fprintf(w, "Hostname: %s\n", host)
-	fmt.Fprintf(w, "Node Name: %s\n", nodeName)
-	fmt.Fprintf(w, "Cluster Name: %s\n", clusterName)
-	fmt.Fprintf(w, "Cluster Region: %s\n", region)
-	fmt.Fprintf(w, "Zone: %s\n", zone)
-	fmt.Fprintf(w, "Project: %s\n", project)
+	if nodeName != nil {
+		fmt.Fprintf(w, "Node Name: %s\n", *nodeName)
+	}
+
+	if clusterName != nil {
+		fmt.Fprintf(w, "Cluster Name: %s\n", *clusterName)
+	}
+
+	if region != nil {
+		fmt.Fprintf(w, "Cluster Region: %s\n", *region)
+	}
+
+	if zoneStr != nil {
+		zoneArr := strings.Split(*zoneStr, "/")
+		zone := zoneArr[len(zoneArr)-1]
+
+		fmt.Fprintf(w, "Zone: %s\n", zone)
+	}
+	if project != nil {
+		fmt.Fprintf(w, "Project: %s\n", *project)
+	}
 	//	fmt.Fprintf(w, "Internal IP: %s\n", internalIP)
 
 }

@@ -1,0 +1,14 @@
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: helloweb-route-internal
+  namespace: helloweb
+spec:
+  # forward traffic in the mesh to the helloweb service
+  hosts:
+  - helloweb.helloweb.svc.cluster.local
+  http:
+  - name: "helloweb"
+    route:
+    - destination:
+        host: helloweb

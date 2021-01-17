@@ -1,0 +1,16 @@
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: helloweb-gateway
+  namespace: helloweb
+spec:
+  selector:
+    app: istio-ingressgateway  
+  servers:
+  # because we want to terminate TLS at the edge, only serve port 80
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts:
+    - '*'

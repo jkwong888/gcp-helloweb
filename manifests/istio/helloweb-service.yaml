@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: helloweb
+  namespace: helloweb
+  labels:
+    app: hello
+spec:
+  selector:
+    app: hello
+    tier: web
+  ports:
+  - name: http
+    protocol: TCP
+    port: 80
+    targetPort: 8080

@@ -18,10 +18,14 @@ spec:
     spec:
       containers:
       - name: hello-app
-        image: gcr.io/jkwng-cicd-274417/hello-app:latest
+        image: gcr.io/jkwng-images/helloweb:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 8080
         resources:
           requests:
+            cpu: 50m
+            memory: 128MiB
+          limits:
             cpu: 250m
+            memory: 256MiB

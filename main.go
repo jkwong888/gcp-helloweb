@@ -21,17 +21,18 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
-//	"net/http/httptest"
-	"time"
+
+	//	"net/http/httptest"
 	"os"
 	"strings"
+	"time"
 
 	"contrib.go.opencensus.io/exporter/prometheus"
+	"github.com/heptiolabs/healthcheck"
+	log "github.com/sirupsen/logrus"
 	"go.opencensus.io/plugin/ochttp"
 	"go.opencensus.io/stats/view"
-	"github.com/heptiolabs/healthcheck"
 )
 
 func getMetaData(ctx context.Context, path string) *string {
@@ -45,7 +46,7 @@ func getMetaData(ctx context.Context, path string) *string {
 	req = req.WithContext(ctx)
 	code, body := makeRequest(req)
 
-	if (code == 200) {
+	if code == 200 {
 		bodyStr := string(body)
 		return &bodyStr
 	}
@@ -85,21 +86,21 @@ func enableObservabilityAndExporters(mux *http.ServeMux) {
 	mux.Handle("/metrics", pe)
 
 	/*
-	// Trace exporter: Zipkin
-	localEndpoint, err := openzipkin.NewEndpoint("ochttp_tutorial", "localhost:5454")
-	if err != nil {
-		log.Fatalf("Failed to create the local zipkinEndpoint: %v", err)
-	}
-	reporter := zipkinHTTP.NewReporter("http://localhost:9411/api/v2/spans")
-	ze := zipkin.NewExporter(reporter, localEndpoint)
-	trace.RegisterExporter(ze)
-	trace.ApplyConfig(trace.Config{DefaultSampler: trace.AlwaysSample()})
+		// Trace exporter: Zipkin
+		localEndpoint, err := openzipkin.NewEndpoint("ochttp_tutorial", "localhost:5454")
+		if err != nil {
+			log.Fatalf("Failed to create the local zipkinEndpoint: %v", err)
+		}
+		reporter := zipkinHTTP.NewReporter("http://localhost:9411/api/v2/spans")
+		ze := zipkin.NewExporter(reporter, localEndpoint)
+		trace.RegisterExporter(ze)
+		trace.ApplyConfig(trace.Config{DefaultSampler: trace.AlwaysSample()})
 	*/
 }
 
 func enableHealthCheck(mux *http.ServeMux) {
 
-	// add health check 
+	// add health check
 	health := healthcheck.NewHandler()
 
 	metaDataURL := "http://metadata/computeMetadata/v1/"
@@ -110,29 +111,24 @@ func enableHealthCheck(mux *http.ServeMux) {
 		"upstream-dep-http",
 		healthcheck.HTTPGetCheck(metaDataURL, 500*time.Millisecond))
 
-
 	mux.HandleFunc("/healthz", health.ReadyEndpoint)
 
 	/*
-	// Trace exporter: Zipkin
-	localEndpoint, err := openzipkin.NewEndpoint("ochttp_tutorial", "localhost:5454")
-	if err != nil {
-		log.Fatalf("Failed to create the local zipkinEndpoint: %v", err)
-	}
-	reporter := zipkinHTTP.NewReporter("http://localhost:9411/api/v2/spans")
-	ze := zipkin.NewExporter(reporter, localEndpoint)
-	trace.RegisterExporter(ze)
-	trace.ApplyConfig(trace.Config{DefaultSampler: trace.AlwaysSample()})
+		// Trace exporter: Zipkin
+		localEndpoint, err := openzipkin.NewEndpoint("ochttp_tutorial", "localhost:5454")
+		if err != nil {
+			log.Fatalf("Failed to create the local zipkinEndpoint: %v", err)
+		}
+		reporter := zipkinHTTP.NewReporter("http://localhost:9411/api/v2/spans")
+		ze := zipkin.NewExporter(reporter, localEndpoint)
+		trace.RegisterExporter(ze)
+		trace.ApplyConfig(trace.Config{DefaultSampler: trace.AlwaysSample()})
 	*/
 }
 
 func main() {
 
 	// Firstly, we'll register ochttp Server views.
-	if err := view.Register(ochttp.DefaultServerViews...); err != nil {
-		log.Fatalf("Failed to register server views for HTTP metrics: %v", err)
-	}
-
 	if err := view.Register(ochttp.DefaultClientViews...); err != nil {
 		log.Fatal("Failed to register client views for HTTP metrics: %v", err)
 	}
@@ -173,7 +169,6 @@ func hello(w http.ResponseWriter, r *http.Request) {
 	clusterName := getMetaData(ctx, "instance/attributes/cluster-name")
 	project := getMetaData(ctx, "project/project-id")
 	//internalIP := getMetaData(ctx, "instance/network-interfaces/0/ip")
-
 
 	fmt.Fprintf(w, "Hello, world!\n")
 	fmt.Fprintf(w, "Version: 1.0.0\n")

@@ -4,9 +4,9 @@ metadata:
   name: helloweb-route-external
   namespace: helloweb
 spec:
-  # forward traffic in the mesh to the helloweb service
+  # forward traffic to the gateway to the helloweb service
   hosts:
-  - '*'
+  - 'helloweb.gcp.jkwong.info'
   gateways:
   - helloweb-gateway
   http:

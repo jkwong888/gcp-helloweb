@@ -7,8 +7,10 @@ spec:
   # forward traffic in the mesh to the helloweb service
   hosts:
   - helloweb.helloweb.svc.cluster.local
+  gateways:
+  - mesh
   http:
   - name: "helloweb"
     route:
     - destination:
-        host: helloweb
+        host: helloweb.helloweb.svc.cluster.local

@@ -98,18 +98,32 @@ func enableObservabilityAndExporters(mux *http.ServeMux) {
 	*/
 }
 
+func NullHealthCheck() healthcheck.Check {
+	return func() error {
+		return nil
+	}
+}
+
 func enableHealthCheck(mux *http.ServeMux) {
 
 	// add health check
 	health := healthcheck.NewHandler()
 
-	metaDataURL := "http://metadata/computeMetadata/v1/"
+	//metaDataURL := "http://metadata/computeMetadata/v1"
+	metadataHostname := "metadata.google.internal"
 	health.AddReadinessCheck(
-		"upstream-dep-http",
-		healthcheck.HTTPGetCheck(metaDataURL, 500*time.Millisecond))
+		"upstream-dep-dns",
+		healthcheck.DNSResolveCheck(metadataHostname, 500*time.Millisecond))
+	health.AddReadinessCheck(
+		"upstream-dep-tcp",
+		healthcheck.TCPDialCheck(fmt.Sprintf("%v:80", metadataHostname), 500*time.Millisecond))
+
 	health.AddLivenessCheck(
-		"upstream-dep-http",
-		healthcheck.HTTPGetCheck(metaDataURL, 500*time.Millisecond))
+		"upstream-dep-dns",
+		healthcheck.DNSResolveCheck(metadataHostname, 500*time.Millisecond))
+	health.AddLivenessCheck(
+		"upstream-dep-tcp",
+		healthcheck.TCPDialCheck(fmt.Sprintf("%v:80", metadataHostname), 500*time.Millisecond))
 
 	mux.HandleFunc("/healthz", health.ReadyEndpoint)
 

@@ -11,6 +11,7 @@ COPY go.sum go.sum
 RUN go mod download
 
 # Copy the go source
+COPY version.txt version.txt
 COPY main.go main.go
 
 # Build

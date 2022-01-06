@@ -29,8 +29,8 @@ push image:
     - wget "https://github.com/GoogleCloudPlatform/docker-credential-gcr/releases/download/v${VERSION}/docker-credential-gcr_${OS}_${ARCH}-${VERSION}.tar.gz" -O-| tar xz --to-stdout ./docker-credential-gcr > /usr/local/bin/docker-credential-gcr
     - chmod +x /usr/local/bin/docker-credential-gcr
     - /usr/local/bin/docker-credential-gcr configure-docker
-    - VERSION=$(cat version.txt)
+    - APP_VERSION=$(cat ./version.txt)
     - crane auth login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
     - crane cp $CI_REGISTRY_IMAGE/$CI_PROJECT_NAME:$CI_COMMIT_SHA gcr.io/jkwng-images/helloweb:$CI_COMMIT_SHA
-    - crane cp $CI_REGISTRY_IMAGE/$CI_PROJECT_NAME:$CI_COMMIT_SHA gcr.io/jkwng-images/helloweb:$VERSION
+    - crane cp $CI_REGISTRY_IMAGE/$CI_PROJECT_NAME:$CI_COMMIT_SHA gcr.io/jkwng-images/helloweb:$APP_VERSION
     - crane cp $CI_REGISTRY_IMAGE/$CI_PROJECT_NAME:$CI_COMMIT_SHA gcr.io/jkwng-images/helloweb:latest

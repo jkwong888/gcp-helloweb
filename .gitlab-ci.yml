@@ -29,6 +29,7 @@ push image:
     - wget "https://github.com/GoogleCloudPlatform/docker-credential-gcr/releases/download/v${VERSION}/docker-credential-gcr_${OS}_${ARCH}-${VERSION}.tar.gz" -O-| tar xz --to-stdout ./docker-credential-gcr > /usr/local/bin/docker-credential-gcr
     - chmod +x /usr/local/bin/docker-credential-gcr
     - /usr/local/bin/docker-credential-gcr configure-docker
+    - pwd
     - find 
     - ls -al
     - APP_VERSION=$(cat $CI_PROJECT_DIR/version.txt)

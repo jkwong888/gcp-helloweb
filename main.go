@@ -21,13 +21,15 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
+	"mime"
 	"net/http"
+	"encoding/json"
 
 	//	"net/http/httptest"
 	"os"
+	"regexp"
 	"strings"
 	"time"
-	"regexp"
 
 	"contrib.go.opencensus.io/exporter/prometheus"
 	"github.com/heptiolabs/healthcheck"
@@ -38,42 +40,42 @@ import (
 
 const PAYLOAD_VERSION = "1.1.0"
 
-type payload struct {
-	version string
+type Payload struct {
+	Version 		string
 
-	nodeName string
-	zone string
-	project string
-	serviceAccount string
+	NodeName 		string
+	Zone 			string
+	Project 		string
+	ServiceAccount 	string
 
-	guest guestAttrs
-	client clientAttrs
+	Guest 			guestAttrs
+	Client 			clientAttrs
 
-	gce *gceAttrs
-	gke *gkeAttrs
-	run *runAttrs
-	cf *cfAttrs
+	Gce 			*gceAttrs		`json:",omitempty"`
+	Gke 			*gkeAttrs		`json:",omitempty"`
+	Run 			*runAttrs		`json:",omitempty"`	
+	Cf 				*cfAttrs		`json:",omitempty"`
 }
 
 type guestAttrs struct {
-	hostname string
+	Hostname 		string
 }
 
 type clientAttrs struct {
-	sourceIpAddr string
-	lbIpAddr *string
+	SourceIpAddr 	string
+	LbIpAddr 		*string			`json:",omitempty"`
 }
 
 type gceAttrs struct {
-	privateIpAddr string
-	machineType string
-	preemptible bool
-	migName *string
+	PrivateIpAddr 	string
+	MachineType 	string
+	Preemptible 	bool
+	MigName 		*string			`json:",omitempty"`
 }
 
 type gkeAttrs struct {
-	clusterName string
-	clusterRegion string
+	ClusterName 	string
+	ClusterRegion 	string
 }
 
 type runAttrs struct {
@@ -186,15 +188,20 @@ func enableHealthCheck(mux *http.ServeMux) {
 	*/
 }
 
-func getAllAttrs() payload {
-	allVals := payload{}
+func getAllAttrs() Payload {
+	allVals := Payload{}
 	ctx := context.Background()
 
-	allVals.version = PAYLOAD_VERSION
+	vers, err := ioutil.ReadFile("version.txt")
+	if err != nil {
+		fmt.Errorf("cannot find file, version.txt: %s", err)
+	}
+
+	allVals.Version = string(vers)
 
 	nodeName := getMetaData(ctx, "instance/hostname")
 	if nodeName != nil {
-		allVals.nodeName = *nodeName
+		allVals.NodeName = *nodeName
 	}
 
 	zoneStr := getMetaData(ctx, "instance/zone")
@@ -202,54 +209,54 @@ func getAllAttrs() payload {
 		zoneArr := strings.Split(*zoneStr, "/")
 		zone := zoneArr[len(zoneArr)-1]
 
-		allVals.zone = zone
+		allVals.Zone = zone
 	}
 
 	project := getMetaData(ctx, "project/project-id")
 	if project != nil {
-		allVals.project = *project
+		allVals.Project = *project
 	}
 
 	serviceAccount := getMetaData(ctx, "instance/service-accounts/default/email")
 	if serviceAccount != nil {
-		allVals.serviceAccount = *serviceAccount
+		allVals.ServiceAccount = *serviceAccount
 	}
 
 	/* Begin guest attributes */
 	host, _ := os.Hostname()
-	allVals.guest.hostname = host
+	allVals.Guest.Hostname = host
 	/* End guest attributes */
 
 	/* Begin GCE attributes */
 	machineType := getMetaData(ctx, "instance/machine-type")
 	if machineType != nil {
 		// assumption: all GCE machines will have the machine-type property
-		if allVals.gce == nil {
-			allVals.gce = &gceAttrs{}
+		if allVals.Gce == nil {
+			allVals.Gce = &gceAttrs{}
 		}
 
 		rexp := regexp.MustCompile(`.*/machineTypes/`)
 		machineTypeStr := rexp.ReplaceAllString(*machineType, "")
-		allVals.gce.machineType = machineTypeStr
+		allVals.Gce.MachineType = machineTypeStr
 	}
 	
 	internalIP := getMetaData(ctx, "instance/network-interfaces/0/ip")
 	if internalIP != nil {
-		allVals.gce.privateIpAddr = *internalIP
+		allVals.Gce.PrivateIpAddr = *internalIP
 	}
 
 	createdBy := getMetaData(ctx, "instance/attributes/created-by")
 	if createdBy != nil {
 		rexp := regexp.MustCompile(`.*/instanceGroupManagers/`)
 		migNameStr := rexp.ReplaceAllString(*createdBy, "")
-		allVals.gce.migName = &migNameStr
+		allVals.Gce.MigName = &migNameStr
 	}
 
 	preemptible := getMetaData(ctx, "instance/scheduling/preemptible")
 	if preemptible != nil  && *preemptible == "TRUE" {
-		allVals.gce.preemptible = true
+		allVals.Gce.Preemptible = true
 	} else {
-		allVals.gce.preemptible = false
+		allVals.Gce.Preemptible = false
 	}
 
 	/* End GCE attributes */
@@ -257,20 +264,20 @@ func getAllAttrs() payload {
 	/* Begin GKE attributes */
 	clusterName := getMetaData(ctx, "instance/attributes/cluster-name")
 	if clusterName != nil {
-		if allVals.gke == nil {
-			allVals.gke = &gkeAttrs{}
+		if allVals.Gke == nil {
+			allVals.Gke = &gkeAttrs{}
 		}
 
-		allVals.gke.clusterName = *clusterName
+		allVals.Gke.ClusterName = *clusterName
 	}
 
 	region := getMetaData(ctx, "instance/attributes/cluster-location")
 	if region != nil {
-		if allVals.gke == nil {
-			allVals.gke = &gkeAttrs{}
+		if allVals.Gke == nil {
+			allVals.Gke = &gkeAttrs{}
 		}
 
-		allVals.gke.clusterName = *clusterName
+		allVals.Gke.ClusterName = *clusterName
 	}
 
 	/* End GKE attributes */
@@ -278,41 +285,68 @@ func getAllAttrs() payload {
 	return allVals
 }
 
+// helloJSON responds with json response
+func helloJSON(w http.ResponseWriter, r *http.Request) {
+	attrs := getAllAttrs()
 
+	jsonObj, err := json.Marshal(attrs)
+
+	if err != nil {
+		log.Fatalf("error marshalling to json: %s", err)
+		http.Error(w, "Error marshalling to json: %s", http.StatusInternalServerError)
+		return
+	}
+
+	fmt.Fprintf(w, "%s", string(jsonObj))
+
+}
 
 // hello responds to the request with a plain-text "Hello, world" message.
 func hello(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Serving request: %s", r.URL.Path)
 
+	contentType := r.Header.Get("accept")
+	if contentType != "" {
+		t, _, err := mime.ParseMediaType(contentType)
+		if err != nil {
+			log.Fatalf("error parsing accept header: %s", contentType)
+		}
+
+		if t == "application/json" {
+			helloJSON(w, r)
+			return
+		}
+	}
+
 	attrs := getAllAttrs()
 
 	fmt.Fprintf(w, "Hello, world!\n")
-	fmt.Fprintf(w, "Version: %s\n", attrs.version)
-	fmt.Fprintf(w, "Hostname: %s\n", attrs.guest.hostname)
+	fmt.Fprintf(w, "Version: %s\n", attrs.Version)
+	fmt.Fprintf(w, "Hostname: %s\n", attrs.Guest.Hostname)
 
-	fmt.Fprintf(w, "Zone: %s\n", attrs.zone)
-	fmt.Fprintf(w, "Project: %s\n", attrs.project)
-	fmt.Fprintf(w, "Node FQDN: %s\n", attrs.nodeName)
-	fmt.Fprintf(w, "Service Account: %s\n", attrs.serviceAccount)
+	fmt.Fprintf(w, "Zone: %s\n", attrs.Zone)
+	fmt.Fprintf(w, "Project: %s\n", attrs.Project)
+	fmt.Fprintf(w, "Node FQDN: %s\n", attrs.NodeName)
+	fmt.Fprintf(w, "Service Account: %s\n", attrs.ServiceAccount)
 
 	//	fmt.Fprintf(w, "Internal IP: %s\n", internalIP)
 
 	// if we're in a VM
-	if attrs.gce != nil {
-		fmt.Fprintf(w, "Machine Type: %s\n", attrs.gce.machineType)
-		fmt.Fprintf(w, "Internal IP Address: %s\n", attrs.gce.privateIpAddr)
-		fmt.Fprintf(w, "Preemptible: %t\n", attrs.gce.preemptible)
+	if attrs.Gce != nil {
+		fmt.Fprintf(w, "Machine Type: %s\n", attrs.Gce.MachineType)
+		fmt.Fprintf(w, "Internal IP Address: %s\n", attrs.Gce.PrivateIpAddr)
+		fmt.Fprintf(w, "Preemptible: %t\n", attrs.Gce.Preemptible)
 
-		if attrs.gce.migName != nil {
-			fmt.Fprintf(w, "Managed Instance Group: %s\n", *attrs.gce.migName)
+		if attrs.Gce.MigName != nil {
+			fmt.Fprintf(w, "Managed Instance Group: %s\n", *attrs.Gce.MigName)
 		}
 	}
 
 	// if we're in GKE 
-	if attrs.gke != nil {
+	if attrs.Gke != nil {
 		// get the cluster name
-		fmt.Fprintf(w, "GKE Cluster Name: %s\n", attrs.gke.clusterName)
-		fmt.Fprintf(w, "GKE Cluster Region: %s\n", attrs.gke.clusterRegion)
+		fmt.Fprintf(w, "GKE Cluster Name: %s\n", attrs.Gke.ClusterName)
+		fmt.Fprintf(w, "GKE Cluster Region: %s\n", attrs.Gke.ClusterRegion)
 	}
 
 }

@@ -11,7 +11,6 @@ COPY go.sum go.sum
 RUN go mod download
 
 # Copy the go source
-COPY version.txt version.txt
 COPY main.go main.go
 
 # Build
@@ -22,6 +21,8 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GO111MODULE=on go build -a -o hellowor
 FROM gcr.io/distroless/static:nonroot
 WORKDIR /
 COPY --from=builder /workspace/helloworld .
+COPY version.txt version.txt
 USER nonroot:nonroot
+EXPOSE 8080
 
 ENTRYPOINT ["/helloworld"]

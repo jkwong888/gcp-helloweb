@@ -41,41 +41,41 @@ import (
 const PAYLOAD_VERSION = "1.1.0"
 
 type Payload struct {
-	Version 		string
+	Version 		string			`json:"version"`
 
-	NodeName 		string
-	Zone 			string
-	Project 		string
-	ServiceAccount 	string
+	NodeName 		string			`json:"nodename"`
+	Zone 			string			`json:"zone"`
+	Project 		string			`json:"project"`
+	ServiceAccount 	string			`json:"serviceAccount"`
 
-	Guest 			guestAttrs
-	Client 			clientAttrs
+	Guest 			guestAttrs		`json:"guest"`
+	Client 			clientAttrs		`json:"client"`
 
-	Gce 			*gceAttrs		`json:",omitempty"`
-	Gke 			*gkeAttrs		`json:",omitempty"`
-	Run 			*runAttrs		`json:",omitempty"`	
-	Cf 				*cfAttrs		`json:",omitempty"`
+	Gce 			*gceAttrs		`json:"gce,omitempty"`
+	Gke 			*gkeAttrs		`json:"gke,omitempty"`
+	Run 			*runAttrs		`json:"run,omitempty"`	
+	Cf 				*cfAttrs		`json:"cf,omitempty"`
 }
 
 type guestAttrs struct {
-	Hostname 		string
+	Hostname 		string			`json:"hostname"`
 }
 
 type clientAttrs struct {
-	SourceIpAddr 	string
-	LbIpAddr 		*string			`json:",omitempty"`
+	SourceAddr 	string			`json:"sourceAddr"`
+	LbAddr 		*string			`json:"lbAddr,omitempty"`
 }
 
 type gceAttrs struct {
-	PrivateIpAddr 	string
-	MachineType 	string
-	Preemptible 	bool
-	MigName 		*string			`json:",omitempty"`
+	PrivateIpAddr 	string			`json:"privateIp"`
+	MachineType 	string			`json:"machineType"`
+	Preemptible 	bool			`json:"preemptible"`
+	MigName 		*string			`json:"migName,omitempty"`
 }
 
 type gkeAttrs struct {
-	ClusterName 	string
-	ClusterRegion 	string
+	ClusterName 	string			`json:"clusterName"`
+	ClusterRegion 	string			`json:"clusterRegion"`
 }
 
 type runAttrs struct {
@@ -188,7 +188,7 @@ func enableHealthCheck(mux *http.ServeMux) {
 	*/
 }
 
-func getAllAttrs() Payload {
+func getAllAttrs(r *http.Request) Payload {
 	allVals := Payload{}
 	ctx := context.Background()
 
@@ -221,6 +221,29 @@ func getAllAttrs() Payload {
 	if serviceAccount != nil {
 		allVals.ServiceAccount = *serviceAccount
 	}
+
+	/* Begin client attributes */
+
+	// get the XFF header
+	xffHdr := r.Header.Get("x-forwarded-for")
+
+	if xffHdr != "" {
+		ips := strings.Split(xffHdr, ",")
+
+		// you can only trust the first two IPs, throw everything else away
+		if len(ips) > 1 {
+			allVals.Client.SourceAddr = ips[0]
+			allVals.Client.LbAddr = &ips[1]
+		}
+	} else {
+		// if xff header is not there, then it must be a direct client
+		clientIpPort := r.RemoteAddr
+		portSepIdx := strings.LastIndex(clientIpPort, ":")
+		clientIp := clientIpPort[0:portSepIdx]
+		allVals.Client.SourceAddr = clientIp
+	}
+
+	/* End client attributes */
 
 	/* Begin guest attributes */
 	host, _ := os.Hostname()
@@ -286,9 +309,7 @@ func getAllAttrs() Payload {
 }
 
 // helloJSON responds with json response
-func helloJSON(w http.ResponseWriter, r *http.Request) {
-	attrs := getAllAttrs()
-
+func helloJSON(w http.ResponseWriter, attrs Payload) {
 	jsonObj, err := json.Marshal(attrs)
 
 	if err != nil {
@@ -298,28 +319,9 @@ func helloJSON(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fmt.Fprintf(w, "%s", string(jsonObj))
-
 }
 
-// hello responds to the request with a plain-text "Hello, world" message.
-func hello(w http.ResponseWriter, r *http.Request) {
-	log.Printf("Serving request: %s", r.URL.Path)
-
-	contentType := r.Header.Get("accept")
-	if contentType != "" {
-		t, _, err := mime.ParseMediaType(contentType)
-		if err != nil {
-			log.Fatalf("error parsing accept header: %s", contentType)
-		}
-
-		if t == "application/json" {
-			helloJSON(w, r)
-			return
-		}
-	}
-
-	attrs := getAllAttrs()
-
+func helloText(w http.ResponseWriter, attrs Payload) {
 	fmt.Fprintf(w, "Hello, world!\n")
 	fmt.Fprintf(w, "Version: %s\n", attrs.Version)
 	fmt.Fprintf(w, "Hostname: %s\n", attrs.Guest.Hostname)
@@ -329,7 +331,11 @@ func hello(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Node FQDN: %s\n", attrs.NodeName)
 	fmt.Fprintf(w, "Service Account: %s\n", attrs.ServiceAccount)
 
-	//	fmt.Fprintf(w, "Internal IP: %s\n", internalIP)
+
+	fmt.Fprintf(w, "Client Addr: %s\n", attrs.Client.SourceAddr)
+	if attrs.Client.LbAddr != nil {
+		fmt.Fprintf(w, "LB Addr: %s\n", *attrs.Client.LbAddr)
+	}
 
 	// if we're in a VM
 	if attrs.Gce != nil {
@@ -348,6 +354,31 @@ func hello(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "GKE Cluster Name: %s\n", attrs.Gke.ClusterName)
 		fmt.Fprintf(w, "GKE Cluster Region: %s\n", attrs.Gke.ClusterRegion)
 	}
+}
+
+// hello responds to the request with a plain-text "Hello, world" message.
+func hello(w http.ResponseWriter, r *http.Request) {
+	log.Printf("Serving request: %s", r.URL.Path)
+
+	attrs := getAllAttrs(r)
+
+	contentType := r.Header.Get("accept")
+	for _, v := range strings.Split(contentType, ",") {
+		if v != "" {
+			t, _, err := mime.ParseMediaType(v)
+			if err != nil {
+				log.Warnf("error parsing accept header: %s", v)
+				continue
+			}
+
+			if t == "application/json" {
+				helloJSON(w, attrs)
+				return
+			}
+		}
+	}
+
+	helloText(w, attrs)
 
 }
 

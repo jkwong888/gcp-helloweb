@@ -1,0 +1,15 @@
+
+resources:
+- namespace.yaml
+- deployment.yaml
+- service.yaml
+
+images:
+- name: helloweb
+  newName: gcr.io/jkwng-images/helloweb
+  newTag: "1.2.2"
+
+commonLabels:
+  app: helloweb
+
+namespace: helloweb

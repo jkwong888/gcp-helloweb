@@ -1,0 +1,9 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: autoneg-controller-manager
+  namespace: autoneg-system
+spec:
+  template:
+    spec:
+      serviceAccountName: autoneg

@@ -18,14 +18,18 @@
 package main
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"io/ioutil"
 	"mime"
+	"net"
 	"net/http"
-	"encoding/json"
 
 	//	"net/http/httptest"
+	"html/template"
 	"os"
 	"regexp"
 	"strings"
@@ -42,6 +46,7 @@ const PAYLOAD_VERSION = "1.1.0"
 
 type Payload struct {
 	Version 		string			`json:"version"`
+	RequestPath		string			`json:"requestPath"`
 
 	NodeName 		string			`json:"nodename"`
 	Zone 			string			`json:"zone"`
@@ -55,10 +60,12 @@ type Payload struct {
 	Gke 			*gkeAttrs		`json:"gke,omitempty"`
 	Run 			*runAttrs		`json:"run,omitempty"`	
 	Cf 				*cfAttrs		`json:"cf,omitempty"`
+	K8s				*k8sAttrs		`json:"k8s,omitempty"`
 }
 
 type guestAttrs struct {
 	Hostname 		string			`json:"hostname"`
+	GuestIpAddr 	string			`json:"guestIp"`
 }
 
 type clientAttrs struct {
@@ -68,7 +75,7 @@ type clientAttrs struct {
 
 type gceAttrs struct {
 	PrivateIpAddr 	string			`json:"privateIp"`
-	MachineType 	string			`json:"machineType"`
+	MachineType 	string			`json:"machineType,omitempty"`
 	Preemptible 	bool			`json:"preemptible"`
 	MigName 		*string			`json:"migName,omitempty"`
 }
@@ -78,10 +85,37 @@ type gkeAttrs struct {
 	ClusterRegion 	string			`json:"clusterRegion"`
 }
 
+type k8sAttrs struct {
+	PodName			string				`json:"podName"`
+	PodIpAddr		string				`json:"podIpAddr"`
+	Namespace		string				`json:"namespace"`
+	ServiceAccount	string				`json:"serviceAccount"`
+	Labels			*map[string]string  `json:"labels,omitempty"`
+	NodeName		string				`json:"nodeName"`
+	NodeIpAddr		string				`json:"nodeIpAddr"`
+}
+
 type runAttrs struct {
 }
 
 type cfAttrs struct {
+}
+
+// GetLocalIP returns the non loopback local IP of the host
+func GetLocalIP() string {
+    addrs, err := net.InterfaceAddrs()
+    if err != nil {
+        return ""
+    }
+    for _, address := range addrs {
+        // check the address type and if it is not a loopback the display it
+        if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+            if ipnet.IP.To4() != nil {
+                return ipnet.IP.String()
+            }
+        }
+    }
+    return ""
 }
 
 func getMetaData(ctx context.Context, path string) *string {
@@ -188,16 +222,53 @@ func enableHealthCheck(mux *http.ServeMux) {
 	*/
 }
 
+func stringToRGB(s string) string {
+	h := fnv.New32a()
+	h.Write([]byte(s))
+	c := fmt.Sprintf("#%06X", h.Sum32() & 0x00FFFFFF)
+	return c
+}
+
+func getKeyValsFromDisk(filename string) *map[string]string {
+    file, err := os.Open(filename)
+    if err != nil {
+        log.Error(err)
+		return nil
+    }
+    defer file.Close()
+
+	var labels = make(map[string]string)
+
+    scanner := bufio.NewScanner(file)
+    // optionally, resize scanner's capacity for lines over 64K, see next example
+    for scanner.Scan() {
+		text := scanner.Text()
+		// split the text on =
+		//log.Info(text)
+
+        //fmt.Println(scanner.Text())
+		s := strings.SplitN(text, "=", 2)
+		labels[s[0]] = strings.Trim(s[1], "\"")
+    }
+
+    if err := scanner.Err(); err != nil {
+        log.Error(err)
+    }
+
+	return &labels
+}
+
 func getAllAttrs(r *http.Request) Payload {
 	allVals := Payload{}
 	ctx := context.Background()
 
 	vers, err := ioutil.ReadFile("version.txt")
 	if err != nil {
-		fmt.Errorf("cannot find file, version.txt: %s", err)
+		_ = fmt.Errorf("cannot find file, version.txt: %s", err)
 	}
 
 	allVals.Version = string(vers)
+	allVals.RequestPath = r.URL.Path
 
 	nodeName := getMetaData(ctx, "instance/hostname")
 	if nodeName != nil {
@@ -248,6 +319,9 @@ func getAllAttrs(r *http.Request) Payload {
 	/* Begin guest attributes */
 	host, _ := os.Hostname()
 	allVals.Guest.Hostname = host
+
+	localIp := GetLocalIP()
+	allVals.Guest.GuestIpAddr = localIp
 	/* End guest attributes */
 
 	/* Begin GCE attributes */
@@ -265,6 +339,10 @@ func getAllAttrs(r *http.Request) Payload {
 	
 	internalIP := getMetaData(ctx, "instance/network-interfaces/0/ip")
 	if internalIP != nil {
+		if allVals.Gce == nil {
+			allVals.Gce = &gceAttrs{}
+		}
+
 		allVals.Gce.PrivateIpAddr = *internalIP
 	}
 
@@ -272,14 +350,25 @@ func getAllAttrs(r *http.Request) Payload {
 	if createdBy != nil {
 		rexp := regexp.MustCompile(`.*/instanceGroupManagers/`)
 		migNameStr := rexp.ReplaceAllString(*createdBy, "")
+
+		if allVals.Gce == nil {
+			allVals.Gce = &gceAttrs{}
+		}
+
 		allVals.Gce.MigName = &migNameStr
 	}
 
 	preemptible := getMetaData(ctx, "instance/scheduling/preemptible")
 	if preemptible != nil  && *preemptible == "TRUE" {
+		if allVals.Gce == nil {
+			allVals.Gce = &gceAttrs{}
+		}
+
 		allVals.Gce.Preemptible = true
 	} else {
-		allVals.Gce.Preemptible = false
+		if allVals.Gce != nil {
+			allVals.Gce.Preemptible = false
+		}
 	}
 
 	/* End GCE attributes */
@@ -300,10 +389,74 @@ func getAllAttrs(r *http.Request) Payload {
 			allVals.Gke = &gkeAttrs{}
 		}
 
-		allVals.Gke.ClusterName = *clusterName
+		allVals.Gke.ClusterRegion = *region
 	}
 
 	/* End GKE attributes */
+
+	/* Begin K8S Attributes -- should be passed from the Downward API*/
+	if k8sNodeName := os.Getenv("K8S_NODE_NAME"); k8sNodeName != "" {
+		if allVals.K8s == nil {
+			allVals.K8s = &k8sAttrs{}
+		}
+
+		allVals.K8s.NodeName = k8sNodeName
+	}
+
+	if k8sNodeIp := os.Getenv("K8S_NODE_IP"); k8sNodeIp != "" {
+		if allVals.K8s == nil {
+			allVals.K8s = &k8sAttrs{}
+		}
+
+		allVals.K8s.NodeIpAddr = k8sNodeIp
+	}
+
+
+	if k8sPodName := os.Getenv("K8S_POD_NAME"); k8sPodName != "" {
+		if allVals.K8s == nil {
+			allVals.K8s = &k8sAttrs{}
+		}
+
+		allVals.K8s.PodName = k8sPodName
+	}
+
+	if k8sPodNamespace := os.Getenv("K8S_POD_NAMESPACE"); k8sPodNamespace != "" {
+		if allVals.K8s == nil {
+			allVals.K8s = &k8sAttrs{}
+		}
+
+		allVals.K8s.Namespace = k8sPodNamespace
+	}
+
+	if k8sPodIp := os.Getenv("K8S_POD_IP"); k8sPodIp != "" {
+		if allVals.K8s == nil {
+			allVals.K8s = &k8sAttrs{}
+		}
+
+		allVals.K8s.PodIpAddr = k8sPodIp
+	}
+
+	if k8sServiceAccount := os.Getenv("K8S_POD_SERVICE_ACCOUNT"); k8sServiceAccount != "" {
+		if allVals.K8s == nil {
+			allVals.K8s = &k8sAttrs{}
+		}
+
+		allVals.K8s.ServiceAccount = k8sServiceAccount
+	}
+
+	// the pod labels should be mounted in /podinfo/labels
+	labels := getKeyValsFromDisk("/podinfo/labels")
+	if labels != nil {
+		if allVals.K8s == nil {
+			allVals.K8s = &k8sAttrs{}
+		}
+
+		allVals.K8s.Labels = labels
+
+	}
+
+
+	/* End K8S Attributes */
 
 	return allVals
 }
@@ -321,16 +474,213 @@ func helloJSON(w http.ResponseWriter, attrs Payload) {
 	fmt.Fprintf(w, "%s", string(jsonObj))
 }
 
+func helloHTML(w http.ResponseWriter, attrs Payload) {
+    funcMap := template.FuncMap{
+        // The name "inc" is what the function will be called in the template text.
+        "inc": func(i int) int {
+            return i + 1
+        },
+		"toRGB": func(s string) string {
+			return stringToRGB(s)
+		},
+    }
+
+	t := template.New("responseTemplate")
+
+	htmlOut := `
+<html>
+	<head>
+		<style>
+			body {
+				background-color: {{ toRGB .RequestPath }}
+			}
+			h1 {
+				font-family: Arial, Helvetica, sans-serif;
+			}
+			table, th, td {
+				border: 1px solid black;
+				border-collapse: collapse;
+			}
+			table {
+				min-width: 150px;
+				max-width: 750px;
+			}
+			th, td {
+				padding-top: 5px;
+				padding-bottom: 5px;
+				padding-left: 10px;
+				padding-right: 10px;
+				font-family: Arial, Helvetica, sans-serif;
+			}
+		</style>
+	</head>
+	<body>
+		<div align="center">
+			<h1>Hello, world!</h1>
+			<div>
+			<table>
+				<tbody>
+				<tr>
+					<td>App Version</td>
+					<td colspan="2">{{ .Version }}</td>
+				</tr>
+				<tr>
+					<td>Request Path</td>
+					<td colspan="2">{{ .RequestPath }}</td>
+				</tr>
+
+				<tr>
+					<td>NodeName</td>
+					<td colspan="2">{{ .NodeName }}</td>
+				</tr>
+				<tr>
+					<td>Zone</td>
+					<td colspan="2">{{ .Zone }}</td>
+				</tr>
+				<tr>
+					<td>Project</td>
+					<td colspan="2">{{ .Project }}</td>
+				</tr>
+				<tr>
+					<td>Service Account</td>
+					<td colspan="2">{{ .ServiceAccount }}</td>
+				</tr>
+
+				<tr>
+					<th colspan="3">Guest Attributes</th>
+				</tr>
+				<tr>
+					<td>Hostname</td>
+					<td colspan="2">{{.Guest.Hostname}}</td>
+				</tr>
+				<tr>
+					<td>IP Address</td>
+					<td colspan="2">{{.Guest.GuestIpAddr}}</td>
+				</tr>
+				<tr>
+					<th colspan="3">Client Attributes</th>
+				</tr>
+				<tr>
+					<td>Source Address</td>
+					<td colspan="2">{{.Client.SourceAddr}}
+				</tr>
+				{{ if .Client.LbAddr }}
+				<tr>
+					<td>Load Balancer Address</td>
+					<td colspan="2">{{.Client.LbAddr}}</td>
+				</tr>
+				{{ end }}
+
+				{{ if .Gce }}
+				<tr>
+					<th colspan="3"> Compute Engine Attributes</th>
+				</tr>
+				<tr>
+					<td>Private IP Address</td>
+					<td colspan="2">{{.Gce.PrivateIpAddr}}</td>
+				</tr>
+				<tr>
+					<td>Machine Type</td>
+					<td colspan="2">{{.Gce.MachineType}}</td>
+				</tr>
+				<tr>
+					<td>Preemptible</td>
+					<td colspan="2">{{.Gce.Preemptible}}</td>
+				</td>
+				<tr>
+					<td>MIG Name</td>
+					<td colspan="2">{{.Gce.MigName}}</td>
+				</tr>
+				{{ end }}
+
+				{{ if .Gke }}
+				<tr>
+					<th colspan="3">GKE Attributes</th>
+				</tr>
+				<tr>
+					<td>Cluster Name</td>
+					<td colspan="2">{{ .Gke.ClusterName }}</td>
+				</tr>
+				<tr>
+					<td>Cluster Region</td>
+					<td colspan="2">{{ .Gke.ClusterRegion }}</td>
+				</tr>
+
+				{{ end }}
+
+				{{ if .K8s }}
+				<tr>
+					<th colspan="3">Kubernetes Attributes</th>
+				</tr>
+				<tr>
+					<td>Pod Name</td>
+					<td colspan="2">{{ .K8s.PodName }}</td>
+				</tr>
+				<tr>
+					<td>Pod IP</td>
+					<td colspan="2">{{ .K8s.PodIpAddr }}</td>
+				</tr>
+				<tr>
+					<td>Namespace</td>
+					<td colspan="2">{{ .K8s.Namespace }}</td>
+				</tr>
+				<tr>
+					<td>Service Account Name</td>
+					<td colspan="2">{{ .K8s.ServiceAccount }}</td>
+				</tr>
+
+				{{ if .K8s.Labels }}
+				<tr>
+					<td rowSpan="{{ inc (len .K8s.Labels) }}" >Pod Labels</td>
+				</tr>
+				{{ range $k, $v := .K8s.Labels }}
+				<tr>
+					<td width="40%">{{ $k }}</td>
+					<td width="60%" colspan="2">{{ $v }}</td>
+				</tr>
+					{{end}}
+				</tr>
+				{{ end }}
+
+				<tr>
+					<td>Node Name</td>
+					<td colspan="2">{{ .K8s.NodeName }}</td>
+				</tr>
+				<tr>
+					<td>Node IP</td>
+					<td colspan="2">{{ .K8s.NodeIpAddr }}</td>
+				</tr>
+
+				{{ end }}
+
+				</tbody>
+			</table>
+			</div>
+		</div>
+	</body>
+</html>
+	`
+
+	t, err := t.Funcs(funcMap).Parse(htmlOut)
+	if err != nil {
+		log.Fatalf("error marshalling to html: %s", err)
+		http.Error(w, "Error marshalling to html: %s", http.StatusInternalServerError)
+		return
+	}
+
+	t.Execute(w, attrs)
+}
+
 func helloText(w http.ResponseWriter, attrs Payload) {
 	fmt.Fprintf(w, "Hello, world!\n")
 	fmt.Fprintf(w, "Version: %s\n", attrs.Version)
 	fmt.Fprintf(w, "Hostname: %s\n", attrs.Guest.Hostname)
+	fmt.Fprintf(w, "Local IP Address: %s\n", attrs.Guest.GuestIpAddr)
 
 	fmt.Fprintf(w, "Zone: %s\n", attrs.Zone)
 	fmt.Fprintf(w, "Project: %s\n", attrs.Project)
 	fmt.Fprintf(w, "Node FQDN: %s\n", attrs.NodeName)
 	fmt.Fprintf(w, "Service Account: %s\n", attrs.ServiceAccount)
-
 
 	fmt.Fprintf(w, "Client Addr: %s\n", attrs.Client.SourceAddr)
 	if attrs.Client.LbAddr != nil {
@@ -354,6 +704,26 @@ func helloText(w http.ResponseWriter, attrs Payload) {
 		fmt.Fprintf(w, "GKE Cluster Name: %s\n", attrs.Gke.ClusterName)
 		fmt.Fprintf(w, "GKE Cluster Region: %s\n", attrs.Gke.ClusterRegion)
 	}
+
+	// if we're in a k8s pod 
+	if attrs.K8s != nil {
+		fmt.Fprintf(w, "Kubernetes Pod Name: %s\n", attrs.K8s.PodName)
+		fmt.Fprintf(w, "Kubernetes Pod IP Address: %s\n", attrs.K8s.PodIpAddr)
+		fmt.Fprintf(w, "Kubernetes Namespace: %s\n", attrs.K8s.Namespace)
+		fmt.Fprintf(w, "Kubernetes ServiceAccount: %s\n", attrs.K8s.ServiceAccount)
+
+
+		if attrs.K8s.Labels != nil {
+			fmt.Fprintf(w, "Kubernetes Pod Labels:\n")
+			for k, v := range *attrs.K8s.Labels {
+				fmt.Fprintf(w, "  %s: %s\n", k, v)
+			}
+		}
+
+		fmt.Fprintf(w, "Kubernetes Node Name: %s\n", attrs.K8s.NodeName)
+		fmt.Fprintf(w, "Kubernetes Node IP Address: %s\n", attrs.K8s.NodeIpAddr)
+
+	}
 }
 
 // hello responds to the request with a plain-text "Hello, world" message.
@@ -375,6 +745,15 @@ func hello(w http.ResponseWriter, r *http.Request) {
 				helloJSON(w, attrs)
 				return
 			}
+
+			if t == "text/html" {
+				helloHTML(w, attrs)
+				return
+			}
+
+		
+			//log.Printf("mimetype: %s", t)
+
 		}
 	}
 

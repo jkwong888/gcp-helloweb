@@ -1,0 +1,13 @@
+bases:
+- ../standalone_negs
+
+patchesStrategicMerge:
+- service.yaml
+
+nameSuffix: 
+  -a
+
+commonLabels:
+  deployment: a
+
+namespace: helloweb-a

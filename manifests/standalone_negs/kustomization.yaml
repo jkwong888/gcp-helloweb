@@ -1,0 +1,7 @@
+bases:
+- ../deployment
+
+patchesStrategicMerge:
+- helloweb-service-neg.yaml
+
+namespace: helloweb

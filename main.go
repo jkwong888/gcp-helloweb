@@ -19,6 +19,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -27,6 +28,7 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"strconv"
 
 	//	"net/http/httptest"
 	"html/template"
@@ -118,23 +120,92 @@ func GetLocalIP() string {
     return ""
 }
 
-func getMetaData(ctx context.Context, path string) *string {
-	metaDataURL := "http://metadata/computeMetadata/v1/"
-	req, _ := http.NewRequest(
+func getMetaDataVal(path string, metadata map[string]interface{}) (interface{}) {
+	//log.Info("looking for path ", path, " in ", metadata)
+
+	// string is a slash-delimited path to traverse down the json tree
+	s := strings.SplitN(path, "/", 2)
+
+	if len(s) == 0 {
+		// empty string?
+		return nil
+	}
+
+	p0 := s[0]
+	br := metadata[p0]
+
+	// check if the path fragment has a [] which indicates we expect an array
+	rexp := regexp.MustCompile(`(?P<path>[a-zA-z]+)\[(?P<index>\d+)\]`)
+	matched := rexp.MatchString(s[0])
+
+	if matched {
+		pathStr := "${path}"
+		indexStr := "${index}"
+		p0 = rexp.ReplaceAllString(s[0], pathStr)
+		idx, _ := strconv.Atoi(rexp.ReplaceAllString(s[0], indexStr))
+
+		brArray := metadata[p0].([]interface{})
+		br = brArray[idx]
+
+		// TODO: here we assume that it's an array of maps, what if it's just an array of strings or something?
+	}
+
+
+	if br == nil {
+		//log.Info("not found path: ", path)
+		return nil
+	}
+
+	if len(s) == 1 {
+		//log.Info("found path ", path, " ", br)
+		return br
+	}
+
+	// call myself on the remainder of the path
+	return getMetaDataVal(s[1], br.(map[string]interface{}))
+}
+
+func getMetaDataStrVal(path string, metadata map[string]interface{}) (*string) {
+	val := getMetaDataVal(path, metadata)
+	if val == nil {
+		return nil
+	}
+
+	valStr := val.(string)
+	return &valStr
+}
+
+func getMetaDataBoolVal(path string, metadata map[string]interface{}) (*bool) {
+	val := getMetaDataVal(path, metadata)
+	if val == nil {
+		return nil
+	}
+
+	valBool := val.(bool)
+	return &valBool
+}
+
+func getMetaData(ctx context.Context) (*string, error) {
+	metaDataURL := "http://metadata/computeMetadata/v1/?recursive=true"
+	req, err := http.NewRequest(
 		"GET",
-		metaDataURL+path,
+		metaDataURL,
 		nil,
 	)
+	if (err != nil) {
+		return nil, err
+	}
+
 	req.Header.Add("Metadata-Flavor", "Google")
 	req = req.WithContext(ctx)
 	code, body := makeRequest(req)
 
 	if code == 200 {
 		bodyStr := string(body)
-		return &bodyStr
+		return &bodyStr, nil
 	}
 
-	return nil
+	return nil, nil
 }
 
 func makeRequest(r *http.Request) (int, []byte) {
@@ -232,7 +303,7 @@ func stringToRGB(s string) string {
 func getKeyValsFromDisk(filename string) *map[string]string {
     file, err := os.Open(filename)
     if err != nil {
-        log.Error(err)
+        log.Warn(err)
 		return nil
     }
     defer file.Close()
@@ -258,7 +329,7 @@ func getKeyValsFromDisk(filename string) *map[string]string {
 	return &labels
 }
 
-func getAllAttrs(r *http.Request) Payload {
+func getAllAttrs(r *http.Request) (Payload, error) {
 	allVals := Payload{}
 	ctx := context.Background()
 
@@ -269,13 +340,26 @@ func getAllAttrs(r *http.Request) Payload {
 
 	allVals.Version = string(vers)
 	allVals.RequestPath = r.URL.Path
+	var metadata map[string]interface{}
+	metadataStr, err := getMetaData(ctx)
+	if err != nil {
+		log.Errorf("Enable to retrieve metadata: %s", err)
+		return allVals, err
+	}
 
-	nodeName := getMetaData(ctx, "instance/hostname")
+	// dump out the metadata to the logs
+	var outJSON bytes.Buffer
+	json.Indent(&outJSON, []byte(*metadataStr), "", "  ")
+	log.Info("metadata:\n", outJSON.String())
+
+	json.Unmarshal([]byte(*metadataStr), &metadata)
+
+	nodeName := getMetaDataStrVal("instance/hostname", metadata)
 	if nodeName != nil {
 		allVals.NodeName = *nodeName
 	}
 
-	zoneStr := getMetaData(ctx, "instance/zone")
+	zoneStr := getMetaDataStrVal("instance/zone", metadata)
 	if zoneStr != nil {
 		zoneArr := strings.Split(*zoneStr, "/")
 		zone := zoneArr[len(zoneArr)-1]
@@ -283,12 +367,12 @@ func getAllAttrs(r *http.Request) Payload {
 		allVals.Zone = zone
 	}
 
-	project := getMetaData(ctx, "project/project-id")
+	project := getMetaDataStrVal("project/projectId", metadata)
 	if project != nil {
 		allVals.Project = *project
 	}
 
-	serviceAccount := getMetaData(ctx, "instance/service-accounts/default/email")
+	serviceAccount := getMetaDataStrVal("instance/serviceAccounts/default/email", metadata)
 	if serviceAccount != nil {
 		allVals.ServiceAccount = *serviceAccount
 	}
@@ -325,7 +409,7 @@ func getAllAttrs(r *http.Request) Payload {
 	/* End guest attributes */
 
 	/* Begin GCE attributes */
-	machineType := getMetaData(ctx, "instance/machine-type")
+	machineType := getMetaDataStrVal("instance/machineType", metadata)
 	if machineType != nil {
 		// assumption: all GCE machines will have the machine-type property
 		if allVals.Gce == nil {
@@ -337,7 +421,7 @@ func getAllAttrs(r *http.Request) Payload {
 		allVals.Gce.MachineType = machineTypeStr
 	}
 	
-	internalIP := getMetaData(ctx, "instance/network-interfaces/0/ip")
+	internalIP := getMetaDataStrVal("instance/networkInterfaces[0]/ip", metadata)
 	if internalIP != nil {
 		if allVals.Gce == nil {
 			allVals.Gce = &gceAttrs{}
@@ -346,7 +430,7 @@ func getAllAttrs(r *http.Request) Payload {
 		allVals.Gce.PrivateIpAddr = *internalIP
 	}
 
-	createdBy := getMetaData(ctx, "instance/attributes/created-by")
+	createdBy := getMetaDataStrVal("instance/attributes/createdBy", metadata)
 	if createdBy != nil {
 		rexp := regexp.MustCompile(`.*/instanceGroupManagers/`)
 		migNameStr := rexp.ReplaceAllString(*createdBy, "")
@@ -358,7 +442,7 @@ func getAllAttrs(r *http.Request) Payload {
 		allVals.Gce.MigName = &migNameStr
 	}
 
-	preemptible := getMetaData(ctx, "instance/scheduling/preemptible")
+	preemptible := getMetaDataStrVal("instance/scheduling/preemptible", metadata)
 	if preemptible != nil  && *preemptible == "TRUE" {
 		if allVals.Gce == nil {
 			allVals.Gce = &gceAttrs{}
@@ -374,7 +458,7 @@ func getAllAttrs(r *http.Request) Payload {
 	/* End GCE attributes */
 
 	/* Begin GKE attributes */
-	clusterName := getMetaData(ctx, "instance/attributes/cluster-name")
+	clusterName := getMetaDataStrVal("instance/attributes/clusterName", metadata)
 	if clusterName != nil {
 		if allVals.Gke == nil {
 			allVals.Gke = &gkeAttrs{}
@@ -383,7 +467,7 @@ func getAllAttrs(r *http.Request) Payload {
 		allVals.Gke.ClusterName = *clusterName
 	}
 
-	region := getMetaData(ctx, "instance/attributes/cluster-location")
+	region := getMetaDataStrVal("instance/attributes/clusterLocation", metadata)
 	if region != nil {
 		if allVals.Gke == nil {
 			allVals.Gke = &gkeAttrs{}
@@ -458,7 +542,7 @@ func getAllAttrs(r *http.Request) Payload {
 
 	/* End K8S Attributes */
 
-	return allVals
+	return allVals, nil
 }
 
 // helloJSON responds with json response
@@ -730,7 +814,12 @@ func helloText(w http.ResponseWriter, attrs Payload) {
 func hello(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Serving request: %s", r.URL.Path)
 
-	attrs := getAllAttrs(r)
+	attrs, err := getAllAttrs(r)
+	if err != nil {
+		log.Fatalf("error marshalling to html: %s", err)
+		http.Error(w, "Error marshalling to html: %s", http.StatusInternalServerError)
+		return
+	}
 
 	contentType := r.Header.Get("accept")
 	for _, v := range strings.Split(contentType, ",") {

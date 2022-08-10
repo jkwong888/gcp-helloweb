@@ -19,7 +19,6 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -50,7 +49,7 @@ type Payload struct {
 	Version 		string			`json:"version"`
 	RequestPath		string			`json:"requestPath"`
 
-	NodeName 		string			`json:"nodename"`
+	NodeName 		string			`json:"nodename,omitempty"`
 	Zone 			string			`json:"zone"`
 	Project 		string			`json:"project"`
 	ServiceAccount 	string			`json:"serviceAccount"`
@@ -58,6 +57,7 @@ type Payload struct {
 	Guest 			guestAttrs		`json:"guest"`
 	Client 			clientAttrs		`json:"client"`
 
+	Gae				*gaeAttrs		`json:"gae,omitempty"`
 	Gce 			*gceAttrs		`json:"gce,omitempty"`
 	Gke 			*gkeAttrs		`json:"gke,omitempty"`
 	Run 			*runAttrs		`json:"run,omitempty"`	
@@ -73,6 +73,11 @@ type guestAttrs struct {
 type clientAttrs struct {
 	SourceAddr 	string			`json:"sourceAddr"`
 	LbAddr 		*string			`json:"lbAddr,omitempty"`
+}
+
+type gaeAttrs struct {
+	Region 			string			`json:"region"`
+	InstanceId 		string			`json:"instanceId"`
 }
 
 type gceAttrs struct {
@@ -144,6 +149,10 @@ func getMetaDataVal(path string, metadata map[string]interface{}) (interface{}) 
 		p0 = rexp.ReplaceAllString(s[0], pathStr)
 		idx, _ := strconv.Atoi(rexp.ReplaceAllString(s[0], indexStr))
 
+		if metadata[p0] == nil {
+			return nil
+		}
+
 		brArray := metadata[p0].([]interface{})
 		br = brArray[idx]
 
@@ -173,6 +182,16 @@ func getMetaDataStrVal(path string, metadata map[string]interface{}) (*string) {
 
 	valStr := val.(string)
 	return &valStr
+}
+
+func getMetaDataArrVal(path string, metadata map[string]interface{}) ([]interface{}) {
+	val := getMetaDataVal(path, metadata)
+	if val == nil {
+		return nil
+	}
+
+	valArr := val.([]interface{})
+	return valArr
 }
 
 func getMetaDataBoolVal(path string, metadata map[string]interface{}) (*bool) {
@@ -329,6 +348,16 @@ func getKeyValsFromDisk(filename string) *map[string]string {
 	return &labels
 }
 
+func arrayContains(arr []interface{}, str string) bool {
+	for _, a := range arr {
+		if str == a {
+			return true
+		}
+	}
+
+	return false
+}
+
 func getAllAttrs(r *http.Request) (Payload, error) {
 	allVals := Payload{}
 	ctx := context.Background()
@@ -348,9 +377,9 @@ func getAllAttrs(r *http.Request) (Payload, error) {
 	}
 
 	// dump out the metadata to the logs
-	var outJSON bytes.Buffer
-	json.Indent(&outJSON, []byte(*metadataStr), "", "  ")
-	log.Info("metadata:\n", outJSON.String())
+	//var outJSON bytes.Buffer
+	//json.Indent(&outJSON, []byte(*metadataStr), "", "  ")
+	log.Info("metadata:", *metadataStr)
 
 	json.Unmarshal([]byte(*metadataStr), &metadata)
 
@@ -377,6 +406,7 @@ func getAllAttrs(r *http.Request) (Payload, error) {
 		allVals.ServiceAccount = *serviceAccount
 	}
 
+
 	/* Begin client attributes */
 
 	// get the XFF header
@@ -398,6 +428,13 @@ func getAllAttrs(r *http.Request) (Payload, error) {
 		allVals.Client.SourceAddr = clientIp
 	}
 
+	/* if we're in app engine, this header gets set, esp if we're not coming from a load balancer */
+	xaecipHdr := r.Header.Get("x-appengine-user-ip")
+	if xaecipHdr != "" {
+		allVals.Client.SourceAddr = xaecipHdr
+	}
+
+
 	/* End client attributes */
 
 	/* Begin guest attributes */
@@ -407,6 +444,25 @@ func getAllAttrs(r *http.Request) (Payload, error) {
 	localIp := GetLocalIP()
 	allVals.Guest.GuestIpAddr = localIp
 	/* End guest attributes */
+
+	/* Begin GAE attributes */
+	scopes := getMetaDataArrVal("instance/serviceAccounts/default/scopes", metadata)
+	if arrayContains(scopes, "https://www.googleapis.com/auth/appengine.apis") {
+		// if we have appengine APIs in scope, we're probably in app engine
+		if allVals.Gae == nil {
+			allVals.Gae = &gaeAttrs{}
+		}
+
+		instanceId := getMetaDataStrVal("instance/id", metadata)
+		allVals.Gae.InstanceId = *instanceId
+
+		regionStr := getMetaDataStrVal("instance/region", metadata)
+		rexp := regexp.MustCompile(`.*/regions/`)
+		region := rexp.ReplaceAllString(*regionStr, "")
+		allVals.Gae.Region = region
+	}
+
+	/* End GAE attributes */
 
 	/* Begin GCE attributes */
 	machineType := getMetaDataStrVal("instance/machineType", metadata)
@@ -613,10 +669,13 @@ func helloHTML(w http.ResponseWriter, attrs Payload) {
 					<td colspan="2">{{ .RequestPath }}</td>
 				</tr>
 
+				{{ if .NodeName }}
 				<tr>
 					<td>NodeName</td>
 					<td colspan="2">{{ .NodeName }}</td>
 				</tr>
+				{{ end }}
+
 				<tr>
 					<td>Zone</td>
 					<td colspan="2">{{ .Zone }}</td>
@@ -654,6 +713,21 @@ func helloHTML(w http.ResponseWriter, attrs Payload) {
 					<td colspan="2">{{.Client.LbAddr}}</td>
 				</tr>
 				{{ end }}
+
+				{{ if .Gae }}
+				<tr>
+					<th colspan="3">App Engine Attributes</th>
+				</tr>
+				<tr>
+					<td>Instance ID</td>
+					<td colspan="2">{{.Gae.InstanceId}}</td>
+				</tr>
+				<tr>
+					<td>Region</td>
+					<td colspan="2">{{.Gae.Region}}</td>
+				</tr>
+				{{ end }}
+
 
 				{{ if .Gce }}
 				<tr>
@@ -881,3 +955,4 @@ func main() {
 	log.Fatal(err)
 }
 // [END all]
+

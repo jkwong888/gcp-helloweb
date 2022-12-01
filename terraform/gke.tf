@@ -18,7 +18,7 @@ resource "google_compute_firewall" "gke_master_webhook" {
   }
 
   source_ranges = [var.gke_cluster_master_range]
-  target_tags = [random_string.random_network_tag.result]
+  target_tags = [random_id.random_network_tag.hex]
 }
 
 # enable GKE service to use host project networks
@@ -160,14 +160,12 @@ resource "google_container_node_pool" "primary_preemptible_nodes" {
     ]
 
     tags = [
-      random_string.random_network_tag.result
+      random_id.random_network_tag.hex
     ]
   }
 }
 
-resource "random_string" "random_network_tag" {
-  length           = 10
-  special          = true
-  override_special = "-"
-  upper            = false
+resource "random_id" "random_network_tag" {
+  byte_length      = 2 
+  prefix           = "n"
 }

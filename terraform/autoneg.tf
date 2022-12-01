@@ -1,4 +1,7 @@
 module "autoneg-gcp" {
+  depends_on = [
+    google_container_cluster.primary,
+  ]
   source = "git@github.com:GoogleCloudPlatform/gke-autoneg-controller//terraform/gcp"
 
   shared_vpc = {

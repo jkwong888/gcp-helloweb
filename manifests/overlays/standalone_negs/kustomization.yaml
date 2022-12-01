@@ -1,5 +1,5 @@
 bases:
-- ../deployment
+- ../../bases
 
 patchesStrategicMerge:
 - helloweb-service-neg.yaml

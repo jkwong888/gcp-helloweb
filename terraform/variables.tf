@@ -29,6 +29,10 @@ variable "service_project_apis_to_enable" {
   type = list(string)
   default = [
     "compute.googleapis.com",
+    "container.googleapis.com",
+    "cloudresourcemanager.googleapis.com",
+    "certificatemanager.googleapis.com",
+
   ]
 }
 

@@ -1,0 +1,11 @@
+
+resources:
+- service_ilb.yaml
+
+nameSuffix: 
+  -a
+
+commonLabels:
+  deployment: a
+
+namespace: helloweb-a

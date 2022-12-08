@@ -1,5 +1,6 @@
 bases:
 - ../standalone_negs
+- hpa.yaml
 
 patchesStrategicMerge:
 - service.yaml

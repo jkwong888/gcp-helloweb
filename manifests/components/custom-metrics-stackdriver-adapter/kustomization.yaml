@@ -1,0 +1,7 @@
+resources:
+- https://raw.githubusercontent.com/GoogleCloudPlatform/k8s-stackdriver/cm-sd-adapter-v0.13.1/custom-metrics-stackdriver-adapter/deploy/production/adapter_new_resource_model.yaml 
+
+patchesStrategicMerge:
+- serviceaccount.yaml
+
+namespace: custom-metrics

@@ -1,14 +1,21 @@
 data "google_dns_managed_zone" "env_dns_zone" {
   provider  = google-beta
-  name      = "gcp-jkwong-info"
-  project   = data.google_project.host_project.project_id
+  name      = var.dns_zone
+  project   = data.google_project.dns_project.project_id
+}
+
+locals {
+  app_name = split(".", var.dns_name)[0]
+  dns_domain_split = split(".", var.dns_name)
+  dns_domain = join(".", slice(local.dns_domain_split, 1, length(local.dns_domain_split)))
+
 }
 
 resource "google_dns_record_set" "helloweb-dev" {
   provider      = google-beta
   managed_zone  = data.google_dns_managed_zone.env_dns_zone.name
-  project       = data.google_project.host_project.project_id
-  name          = "helloweb-${random_id.random_suffix.hex}.gcp.jkwong.info."
+  project       = data.google_project.dns_project.project_id
+  name          = "${var.dns_name}."
   type          = "A"
   rrdatas       = [
     google_compute_global_address.helloweb-dev.address
@@ -17,23 +24,25 @@ resource "google_dns_record_set" "helloweb-dev" {
 }
 
 resource "google_compute_global_address" "helloweb-dev" {
-  name      = "helloweb-${random_id.random_suffix.hex}"
-  project   = module.service_project.project_id
+  name      = "${local.app_name}-${random_id.random_suffix.hex}"
+  project   = data.google_project.service_project.project_id
 }
 
 resource "google_compute_global_forwarding_rule" "helloweb-dev-https" {
-  name        = "helloweb-dev-https-${random_id.random_suffix.hex}"
+  name        = "${local.app_name}-https-${random_id.random_suffix.hex}"
   target      = google_compute_target_https_proxy.helloweb-dev.id
   port_range  = "443"
   ip_address  = google_compute_global_address.helloweb-dev.id
+
   load_balancing_scheme = "EXTERNAL_MANAGED"
-  project     = module.service_project.project_id
+
+  project     = data.google_project.service_project.project_id
 }
 
 resource "google_compute_global_forwarding_rule" "helloweb-dev-http" {
-  project     = module.service_project.project_id
+  project     = data.google_project.service_project.project_id
 
-  name        = "helloweb-dev-http-${random_id.random_suffix.hex}"
+  name        = "${local.app_name}-http-${random_id.random_suffix.hex}"
   target      = google_compute_target_http_proxy.helloweb-dev-http.id
   port_range  = "80"
   ip_address  = google_compute_global_address.helloweb-dev.id
@@ -41,15 +50,15 @@ resource "google_compute_global_forwarding_rule" "helloweb-dev-http" {
 }
 
 resource "google_compute_target_http_proxy" "helloweb-dev-http" {
-  project           = module.service_project.project_id
-  name              = format("helloweb-dev-http-%s", random_id.random_suffix.hex)
+  project           = data.google_project.service_project.project_id
+  name              = "${local.app_name}-http-${random_id.random_suffix.hex}"
   url_map           = google_compute_url_map.helloweb-dev-http.id
 }
 
 resource "google_compute_url_map" "helloweb-dev-http" {
-  name            = format("helloweb-dev-http-%s", random_id.random_suffix.hex)
-  description     = format("helloweb-dev--http-%s", random_id.random_suffix.hex)
-  project         = module.service_project.project_id
+  name            = "${local.app_name}-http-${random_id.random_suffix.hex}"
+  description     = "${local.app_name}-http-${random_id.random_suffix.hex}"
+  project         = data.google_project.service_project.project_id
 
   default_url_redirect {
     https_redirect = true
@@ -58,20 +67,20 @@ resource "google_compute_url_map" "helloweb-dev-http" {
 }
 
 resource "google_compute_target_https_proxy" "helloweb-dev" {
-  name              = format("helloweb-dev-%s", random_id.random_suffix.hex)
+  name              = "${local.app_name}-${random_id.random_suffix.hex}"
   url_map           = google_compute_url_map.helloweb-dev.id
-  project           = module.service_project.project_id
+  project           = data.google_project.service_project.project_id
   certificate_map   = "//certificatemanager.googleapis.com/${google_certificate_manager_certificate_map.helloweb.id}"
 }
 
 resource "google_compute_url_map" "helloweb-dev" {
-  name            = format("helloweb-dev-%s", random_id.random_suffix.hex)
-  description     = format("helloweb-dev-%s", random_id.random_suffix.hex)
+  name            = "${local.app_name}-${random_id.random_suffix.hex}"
+  description     = "${local.app_name}-${random_id.random_suffix.hex}"
   default_service = google_compute_backend_service.helloweb-dev-a.id
-  project         = module.service_project.project_id
+  project         = data.google_project.service_project.project_id
 
   host_rule {
-    hosts        = [format("helloweb-%s.gcp.jkwong.info", random_id.random_suffix.hex)]
+    hosts        = ["*"]
     path_matcher = "allpaths"
   }
 
@@ -100,7 +109,7 @@ resource "google_compute_url_map" "helloweb-dev" {
 }
 
 resource "google_compute_backend_service" "helloweb-dev-b" {
-  name        = format("helloweb-dev-%s-b", random_id.random_suffix.hex)
+  name        = "${local.app_name}-${random_id.random_suffix.hex}-b"
   port_name   = "http"
   protocol    = "HTTP"
   timeout_sec = 300
@@ -115,7 +124,7 @@ resource "google_compute_backend_service" "helloweb-dev-b" {
   }
 
   health_checks = [google_compute_health_check.http-health-check.id]
-  project       = module.service_project.project_id
+  project       = data.google_project.service_project.project_id
 
   log_config {
     enable = true
@@ -125,7 +134,7 @@ resource "google_compute_backend_service" "helloweb-dev-b" {
 }
 
 resource "google_compute_backend_service" "helloweb-dev-a" {
-  name        = format("helloweb-dev-%s-a", random_id.random_suffix.hex)
+  name        = "${local.app_name}-${random_id.random_suffix.hex}-a"
   port_name   = "http"
   protocol    = "HTTP"
   timeout_sec = 300
@@ -140,7 +149,7 @@ resource "google_compute_backend_service" "helloweb-dev-a" {
   }
 
   health_checks = [google_compute_health_check.http-health-check.id]
-  project       = module.service_project.project_id
+  project       = data.google_project.service_project.project_id
 
   log_config {
     enable = true
@@ -150,7 +159,7 @@ resource "google_compute_backend_service" "helloweb-dev-a" {
 }
 
 resource "google_compute_backend_service" "default" {
-  name        = format("helloweb-dev-default-%s", random_id.random_suffix.hex)
+  name        = "${local.app_name}-default-${random_id.random_suffix.hex}"
   port_name   = "http"
   protocol    = "HTTP"
   timeout_sec = 300
@@ -165,7 +174,7 @@ resource "google_compute_backend_service" "default" {
   }
 
   health_checks = [google_compute_health_check.http-health-check.id]
-  project       = module.service_project.project_id
+  project       = data.google_project.service_project.project_id
 
   log_config {
     enable = true
@@ -175,10 +184,10 @@ resource "google_compute_backend_service" "default" {
 }
 
 resource "google_compute_health_check" "http-health-check" {
-  name                = format("helloweb-http-health-check-%s", random_id.random_suffix.hex)
+  name                = "${local.app_name}-http-health-check-${random_id.random_suffix.hex}"
   check_interval_sec  = 3
   timeout_sec         = 1
-  project             = module.service_project.project_id
+  project             = data.google_project.service_project.project_id
 
   http_health_check {
     port_specification  = "USE_SERVING_PORT"
@@ -191,18 +200,26 @@ resource "google_compute_health_check" "http-health-check" {
 }
 
 resource "google_compute_global_address" "helloweb_ip_address" {
-  project   = module.service_project.project_id
-  name      = "helloweb-glb-${random_id.random_suffix.hex}"
+  project   = data.google_project.service_project.project_id
+  name      = "${local.app_name}-glb-${random_id.random_suffix.hex}"
 }
 
 resource "google_certificate_manager_certificate_map" "helloweb" {
-  project   = module.service_project.project_id
-  name      = "helloweb-cert-map-${random_id.random_suffix.hex}"
+  depends_on = [
+    google_project_service.certificatemanager_project_api,
+  ]
+
+  project   = data.google_project.service_project.project_id
+  name      = "${local.app_name}-cert-map-${random_id.random_suffix.hex}"
 }
 
 resource "google_certificate_manager_certificate_map_entry" "helloweb-default" {
-  project   = module.service_project.project_id
-  name      = "helloweb-cert-map-default-${random_id.random_suffix.hex}"
+  depends_on = [
+    google_project_service.certificatemanager_project_api,
+  ]
+
+  project   = data.google_project.service_project.project_id
+  name      = "${local.app_name}-cert-map-default-${random_id.random_suffix.hex}"
 
   map = google_certificate_manager_certificate_map.helloweb.name 
   certificates = [google_certificate_manager_certificate.cert.id]
@@ -211,13 +228,17 @@ resource "google_certificate_manager_certificate_map_entry" "helloweb-default" {
 }
 
 resource "google_certificate_manager_certificate" "cert" {
-  project   = module.service_project.project_id
-  name = "helloweb-${random_id.random_suffix.hex}"
+  depends_on = [
+    google_project_service.certificatemanager_project_api,
+  ]
+
+  project = data.google_project.service_project.project_id
+  name = "${local.app_name}-${random_id.random_suffix.hex}"
   scope = "DEFAULT"
   managed {
     domains = [
       //"helloweb-${random_id.random_suffix.hex}.gcp.jkwong.info",
-      "*.gcp.jkwong.info",
+      "*.${local.dns_domain}",
     ]
 
     dns_authorizations = [
@@ -228,15 +249,23 @@ resource "google_certificate_manager_certificate" "cert" {
 }
 
 resource "google_certificate_manager_dns_authorization" "helloweb" {
-  project     = module.service_project.project_id
-  name        = "helloweb-${random_id.random_suffix.hex}-dns-auth"
-  domain      = "helloweb-${random_id.random_suffix.hex}.gcp.jkwong.info"
+  depends_on = [
+    google_project_service.certificatemanager_project_api,
+  ]
+
+  project     = data.google_project.service_project.project_id
+  name        = "${local.app_name}-${random_id.random_suffix.hex}-dns-auth"
+  domain      = var.dns_name
 }
 
 resource "google_certificate_manager_dns_authorization" "wildcard" {
-  project     = module.service_project.project_id
-  name        = "wildcard-dns-auth-${random_id.random_suffix.hex}"
-  domain      = "gcp.jkwong.info"
+  depends_on = [
+    google_project_service.certificatemanager_project_api,
+  ]
+
+  project     = data.google_project.service_project.project_id
+  name        = "wildcard-dns-auth-${replace(local.dns_domain, ".", "-")}"
+  domain      = "${local.dns_domain}"
 }
 
 resource "google_dns_record_set" "helloweb_auth" {
@@ -244,7 +273,7 @@ resource "google_dns_record_set" "helloweb_auth" {
     google_certificate_manager_dns_authorization.helloweb,
   ]
 
-  project   = data.google_project.host_project.project_id
+  project = data.google_project.dns_project.project_id
 
   name = google_certificate_manager_dns_authorization.helloweb.dns_resource_record.0.name
   type = google_certificate_manager_dns_authorization.helloweb.dns_resource_record.0.type
@@ -263,7 +292,7 @@ resource "google_dns_record_set" "wildcard_auth" {
     google_certificate_manager_dns_authorization.wildcard,
   ]
 
-  project   = data.google_project.host_project.project_id
+  project = data.google_project.dns_project.project_id
 
   name = google_certificate_manager_dns_authorization.wildcard.dns_resource_record.0.name
   type = google_certificate_manager_dns_authorization.wildcard.dns_resource_record.0.type

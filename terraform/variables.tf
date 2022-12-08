@@ -63,3 +63,8 @@ variable "gke_cluster_default_nodepool_min_size" {}
 variable "gke_cluster_default_nodepool_max_size" {}
 variable "gke_cluster_use_preemptible_nodes" {}
 
+
+variable "acme_email" {}
+variable "acme_registration_key_id" {}
+variable "acme_registration_hmac_base64" {}
+

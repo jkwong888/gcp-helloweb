@@ -1,6 +1,0 @@
-apiVersion: v1
-kind: Service
-metadata:
-  annotations:
-    controller.autoneg.dev/neg: '{"backend_services":{"8080":[{"name":"helloweb-dev-2a11-a","max_rate_per_endpoint":1}]}}'
-  name: helloweb

@@ -3,5 +3,3 @@ resources:
 
 patchesStrategicMerge:
 - serviceaccount.yaml
-
-namespace: custom-metrics

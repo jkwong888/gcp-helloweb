@@ -5,6 +5,9 @@ resource "google_service_account" "metrics_sa" {
 
 
 resource "google_service_account_iam_member" "metrics_wi" {
+    depends_on = [
+      google_container_cluster.primary,
+    ]
     service_account_id = google_service_account.metrics_sa.id
     role = "roles/iam.workloadIdentityUser"
     member = "serviceAccount:${module.service_project.project_id}.svc.id.goog[custom-metrics/custom-metrics-stackdriver-adapter]"

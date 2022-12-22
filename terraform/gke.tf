@@ -103,6 +103,8 @@ resource "google_container_cluster" "primary" {
     ""
   )
 
+  datapath_provider = "ADVANCED_DATAPATH"
+
   networking_mode = "VPC_NATIVE"
   ip_allocation_policy {
     cluster_secondary_range_name = var.gke_cluster_subnet_pods_range_name
@@ -118,6 +120,10 @@ resource "google_container_cluster" "primary" {
     autoscaling_profile = "OPTIMIZE_UTILIZATION"
   }
 
+  dns_config {
+    cluster_dns = "CLOUD_DNS"
+    cluster_dns_scope = "CLUSTER_SCOPE"
+  }
 }
 
 resource "google_container_node_pool" "primary_preemptible_nodes" {
@@ -164,6 +170,7 @@ resource "google_container_node_pool" "primary_preemptible_nodes" {
     ]
   }
 }
+
 
 resource "random_id" "random_network_tag" {
   byte_length      = 2 

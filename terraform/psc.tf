@@ -1,3 +1,4 @@
+/*
 module "autoneg-psc" {
     source = "./autoneg-psc"
 
@@ -29,3 +30,4 @@ output "psc_attachment_id" {
 output "private_dns_name" {
     value = module.autoneg-psc.dns_name
 }
+*/

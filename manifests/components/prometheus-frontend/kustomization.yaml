@@ -1,0 +1,9 @@
+
+resources:
+- https://raw.githubusercontent.com/GoogleCloudPlatform/prometheus-engine/v0.5.0/examples/frontend.yaml
+- namespace.yaml
+
+patchesStrategicMerge:
+- frontend.yaml
+
+namespace: prometheus

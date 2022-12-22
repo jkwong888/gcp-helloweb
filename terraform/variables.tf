@@ -32,6 +32,7 @@ variable "service_project_apis_to_enable" {
     "container.googleapis.com",
     "cloudresourcemanager.googleapis.com",
     "certificatemanager.googleapis.com",
+    "dns.googleapis.com",
 
   ]
 }

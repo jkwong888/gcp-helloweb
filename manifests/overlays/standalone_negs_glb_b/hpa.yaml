@@ -11,7 +11,7 @@ spec:
        name: loadbalancing.googleapis.com|https|backend_request_count
        selector:
          matchLabels:
-           resource.labels.backend_target_name: helloweb-dcec-bbde-a
+           resource.labels.backend_target_name: helloweb-dcec-bbde-b
       target:
         type: AverageValue
         averageValue: 5000m

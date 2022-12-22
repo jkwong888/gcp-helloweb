@@ -1,8 +1,8 @@
 resources:
 - ../standalone_negs_glb_a
 - ../standalone_negs_glb_b
-- ../standalone_negs_ilb_a
-- ../standalone_negs_ilb_b
+#- ../standalone_negs_ilb_a
+#- ../standalone_negs_ilb_b
 
 
 configMapGenerator:

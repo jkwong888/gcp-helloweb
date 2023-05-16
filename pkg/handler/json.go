@@ -1,4 +1,4 @@
-package response
+package handler
 
 import (
 	"encoding/json"
@@ -11,7 +11,7 @@ import (
 )
 
 // helloJSON responds with json response
-func HelloJSON(w http.ResponseWriter, attrs attrs.Payload) {
+func (h *Handler) helloJSON(w http.ResponseWriter, attrs attrs.Payload) {
 	jsonObj, err := json.Marshal(attrs)
 
 	if err != nil {

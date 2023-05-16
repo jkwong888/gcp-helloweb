@@ -18,71 +18,26 @@
 package main
 
 import (
-	"mime"
+	"context"
 	"net/http"
 	"os/signal"
-	"strings"
 	"syscall"
-
-	//	"net/http/httptest"
 	"os"
 
-	"go.opencensus.io/plugin/ochttp"
-	"go.opencensus.io/stats/view"
+	chi "github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
-	attrs "helloworld-http/pkg/attrs"
-	"helloworld-http/pkg/health"
-	"helloworld-http/pkg/metrics"
-	resp "helloworld-http/pkg/response"
+	handler "helloworld-http/pkg/handler"
+	health "helloworld-http/pkg/health"
+	metrics "helloworld-http/pkg/metrics"
+	trace "helloworld-http/pkg/trace"
+	metadata "helloworld-http/pkg/gcp"
 )
 
-// hello responds to the request with a plain-text "Hello, world" message.
-func hello(w http.ResponseWriter, r *http.Request) {
-	//zap.S().Infof("Serving request: %v %s", r.Method, r.URL.Path)
-	zap.L().Info("Serving request", 
-		zap.String("method", r.Method), 
-		zap.String("path", r.URL.Path))
-	zap.L().Debug("Request Headers", 
-		zap.Any("headers", r.Header))
 
-	attrs, err := attrs.GetAllAttrs(r)
-	if err != nil {
-		zap.S().Fatalf("error marshalling to html: %s", err)
-		http.Error(w, "Error marshalling to html: %s", http.StatusInternalServerError)
-		return
-	}
-
-	contentType := r.Header.Get("accept")
-	for _, v := range strings.Split(contentType, ",") {
-		if v != "" {
-			t, _, err := mime.ParseMediaType(v)
-			if err != nil {
-				zap.S().Warnf("error parsing accept header: %s", v)
-				continue
-			}
-
-			if t == "application/json" {
-				resp.HelloJSON(w, attrs)
-				return
-			}
-
-			if t == "text/html" {
-				resp.HelloHTML(w, attrs)
-				return
-			}
-
-		
-			//zap.S().Printf("mimetype: %s", t)
-
-		}
-	}
-
-	resp.HelloText(w, attrs)
-
-}
 
 func main() {
+	ctx := context.Background();
 
 	cfg := zap.NewProductionConfig()
 	a := zap.NewAtomicLevel()
@@ -92,9 +47,27 @@ func main() {
 	defer logger.Sync()
 	zap.ReplaceGlobals(logger)
 
-	// Firstly, we'll register ochttp Server views.
-	if err := view.Register(ochttp.DefaultClientViews...); err != nil {
-		zap.S().Panicf("Failed to register client views for HTTP metrics: %v", err)
+	project := os.Getenv("PROJECT_ID")
+	if project == "" {
+		// try to get it from the environment
+		projectStr, err := metadata.GetProjectID(ctx)
+		if err != nil {
+			zap.S().Panicf("Failed to get metadata: %v", err)
+		}
+
+		project = *projectStr
+	}
+
+	zap.S().Infof("Project ID: %v", project)
+	traceConfig, err := trace.InitTrace(ctx, project);
+	if err != nil {
+		zap.S().Panicf("Failed to initialize trace: %v", err)
+	}
+	defer traceConfig.Shutdown(ctx)
+
+	handler, err := handler.InitHandler(*logger, *traceConfig)
+	if err != nil {
+		zap.S().Panicf("Failed to initialize handler: %v", err)
 	}
 
 	// use PORT environment variable, or default to 8080
@@ -110,23 +83,27 @@ func main() {
 		syscall.SIGTERM, 
 		syscall.SIGQUIT)
 
-	mux := http.NewServeMux()
+	r := chi.NewRouter()
 
-	// Enable observability, add /metrics endpoint to extract and examine stats.
-	metrics.EnableObservabilityAndExporters(mux)
+	r.Use(metrics.Middleware)
+	r.Use(trace.Middleware)
 
 	// Enable health check /healthz endpoint
-	health.EnableHealthCheck(mux)
+	zap.S().Debug("Healthcheck available at /healthz")
+	r.Get("/healthz", health.HealthCheckHandler())
+
+	// add /metrics endpoint to extract and examine stats.
+	metrics.InitMetrics()
+	zap.S().Debug("Metrics available at /metrics")
+	r.Get("/metrics", metrics.MetricsHandler())
 
 	// root handler which serves up responses
-	mux.HandleFunc("/", http.HandlerFunc(hello))
-
-	h := &ochttp.Handler{Handler: mux}
+	r.Get("/*", http.HandlerFunc(handler.Hello))
 
 	go func() {
 		// start the web server on port and accept requests
 		zap.S().Infof("Server listening on port %s", port)
-		err := http.ListenAndServe(":"+port, h)
+		err := http.ListenAndServe(":"+port, r)
 		if err != nil {
 			zap.S().Fatalf("Error listening: %v", err)
 		}

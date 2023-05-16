@@ -14,6 +14,7 @@ import (
 
 	"go.uber.org/zap"
 
+	trace "helloworld-http/pkg/trace"
 	gcp "helloworld-http/pkg/gcp"
 	util "helloworld-http/pkg/util"
 )
@@ -21,8 +22,9 @@ import (
 const PAYLOAD_VERSION = "1.1.0"
 
 type Payload struct {
-	Version     string `json:"version"`
-	RequestPath string `json:"requestPath"`
+	Version     	string `json:"version"`
+
+	Request 	requestAttrs `json:"request"`
 
 	NodeName       string `json:"nodename,omitempty"`
 	Zone           string `json:"zone"`
@@ -38,6 +40,11 @@ type Payload struct {
 	Run *runAttrs `json:"run,omitempty"`
 	Cf  *cfAttrs  `json:"cf,omitempty"`
 	K8s *k8sAttrs `json:"k8s,omitempty"`
+}
+
+type requestAttrs struct {
+	RequestPath 	string `json:"requestPath"`
+	RequestHeaders 	map[string][]string `json:"requestHeaders"`
 }
 
 type guestAttrs struct {
@@ -105,7 +112,7 @@ func getLocalIP() string {
 func getKeyValsFromDisk(filename string) *map[string]string {
     file, err := os.Open(filename)
     if err != nil {
-        zap.S().Warn(err)
+        zap.S().Debug(err)
 		return nil
     }
     defer file.Close()
@@ -131,27 +138,30 @@ func getKeyValsFromDisk(filename string) *map[string]string {
 	return &labels
 }
 
-
-
-
-
-func GetAllAttrs(r *http.Request) (Payload, error) {
+func GetAllAttrs(ctx context.Context, r *http.Request, t trace.TraceConfig) (Payload, error) {
 	allVals := Payload{}
-	ctx := context.Background()
 
+	span := t.StartTrace(ctx, "file io")
 	vers, err := ioutil.ReadFile("version.txt")
 	if err != nil {
 		_ = fmt.Errorf("cannot find file, version.txt: %s", err)
 	}
+	span.End()
 
 	allVals.Version = string(vers)
-	allVals.RequestPath = r.URL.Path
+
+	allVals.Request = requestAttrs{}
+	allVals.Request.RequestPath = r.URL.Path
+	allVals.Request.RequestHeaders = r.Header
+
+	span = t.StartTrace(ctx, "gcp metadata server")
 	var metadata map[string]interface{}
 	metadataStr, err := gcp.GetMetaData(ctx)
 	if err != nil {
 		zap.S().Errorf("Enable to retrieve metadata: %s", err)
 		return allVals, err
 	}
+	span.End()
 
 	// dump out the metadata to the zap.S().
 	//var outJSON bytes.Buffer

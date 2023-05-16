@@ -92,6 +92,35 @@ func GetMetaDataBoolVal(path string, metadata map[string]interface{}) (*bool) {
 	return &valBool
 }
 
+func GetProjectID(ctx context.Context) (*string, error) {
+	metaDataURL := "http://metadata/computeMetadata/v1/project/project-id"
+	req, err := http.NewRequest(
+		"GET",
+		metaDataURL,
+		nil,
+	)
+	if (err != nil) {
+		return nil, err
+	}
+
+	req.Header.Add("Metadata-Flavor", "Google")
+	req = req.WithContext(ctx)
+	code, body := httpreq.MakeRequest(req)
+
+	if code == 200 {
+		bodyStr := string(body)
+		var md map[string]interface{}
+		json.Unmarshal([]byte(bodyStr), &md)
+		zap.L().Info("Called metadata server", 
+			zap.Any("metadata", md))
+
+
+		return &bodyStr, nil
+	}
+
+	return nil, nil
+}
+
 func GetMetaData(ctx context.Context) (*string, error) {
 	metaDataURL := "http://metadata/computeMetadata/v1/?recursive=true"
 	req, err := http.NewRequest(
@@ -106,8 +135,6 @@ func GetMetaData(ctx context.Context) (*string, error) {
 	req.Header.Add("Metadata-Flavor", "Google")
 	req = req.WithContext(ctx)
 	code, body := httpreq.MakeRequest(req)
-
-
 
 	if code == 200 {
 		bodyStr := string(body)

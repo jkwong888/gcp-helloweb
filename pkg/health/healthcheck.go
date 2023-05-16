@@ -14,7 +14,7 @@ func NullHealthCheck() healthcheck.Check {
 	}
 }
 
-func EnableHealthCheck(mux *http.ServeMux) {
+func HealthCheckHandler() (http.HandlerFunc) {
 	// add health check
 	health := healthcheck.NewHandler()
 
@@ -34,7 +34,7 @@ func EnableHealthCheck(mux *http.ServeMux) {
 		"upstream-dep-tcp",
 		healthcheck.TCPDialCheck(fmt.Sprintf("%v:80", metadataHostname), 500*time.Millisecond))
 
-	mux.HandleFunc("/healthz", health.ReadyEndpoint)
+	return http.HandlerFunc(health.ReadyEndpoint)
 
 	/*
 		// Trace exporter: Zipkin

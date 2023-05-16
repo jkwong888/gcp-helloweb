@@ -1,4 +1,4 @@
-package response
+package handler
 
 import (
 	"fmt"
@@ -18,7 +18,7 @@ func stringToRGB(s string) string {
 	return c
 }
 
-func HelloHTML(w http.ResponseWriter, attrs attrs.Payload) {
+func (h *Handler) helloHTML(w http.ResponseWriter, attrs attrs.Payload) {
 	funcMap := template.FuncMap{
 		// The name "inc" is what the function will be called in the template text.
 		"inc": func(i int) int {
@@ -36,7 +36,7 @@ func HelloHTML(w http.ResponseWriter, attrs attrs.Payload) {
 	<head>
 		<style>
 			body {
-				background-color: {{ toRGB .RequestPath }}
+				background-color: {{ toRGB .Request.RequestPath }}
 			}
 			h1 {
 				font-family: Arial, Helvetica, sans-serif;
@@ -70,7 +70,7 @@ func HelloHTML(w http.ResponseWriter, attrs attrs.Payload) {
 				</tr>
 				<tr>
 					<td>Request Path</td>
-					<td colspan="2">{{ .RequestPath }}</td>
+					<td colspan="2">{{ .Request.RequestPath }}</td>
 				</tr>
 
 				{{ if .NodeName }}

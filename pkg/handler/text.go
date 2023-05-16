@@ -1,4 +1,4 @@
-package response
+package handler
 
 import (
 	"fmt"
@@ -7,9 +7,14 @@ import (
 	attrs "helloworld-http/pkg/attrs"
 )
 
-func HelloText(w http.ResponseWriter, attrs attrs.Payload) {
+func (h *Handler) helloText(w http.ResponseWriter, attrs attrs.Payload) {
 	fmt.Fprintf(w, "Hello, world!\n")
 	fmt.Fprintf(w, "Version: %s\n", attrs.Version)
+	fmt.Fprintf(w, "Request Headers:\n")
+	for k, v := range attrs.Request.RequestHeaders {
+		fmt.Fprintf(w, "  %s: %s\n", k, v)
+	}
+
 	fmt.Fprintf(w, "Hostname: %s\n", attrs.Guest.Hostname)
 	fmt.Fprintf(w, "Local IP Address: %s\n", attrs.Guest.GuestIpAddr)
 

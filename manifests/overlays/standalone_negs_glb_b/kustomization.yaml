@@ -6,6 +6,7 @@ resources:
 
 patchesStrategicMerge:
 - service.yaml
+- serviceaccount.yaml
 
 nameSuffix: 
   -b

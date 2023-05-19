@@ -5,7 +5,7 @@ resource "google_service_account" "gmp_sa" {
 
 resource "google_service_account_iam_member" "gmp_wi" {
     depends_on = [
-      google_container_cluster.primary,
+      module.gke.cluster_id,
     ]
     service_account_id = google_service_account.gmp_sa.id
     role = "roles/iam.workloadIdentityUser"

@@ -6,16 +6,13 @@ spec:
   minReplicas: 1
   maxReplicas: 10
   metrics:
-  - external:
+  - type: Pods
+    pods:
       metric:
-       name: loadbalancing.googleapis.com|https|backend_request_count
-       selector:
-         matchLabels:
-           resource.labels.backend_target_name: helloweb-dcec-bbde-b
+       name: requests_total
       target:
         type: AverageValue
-        averageValue: 5000m
-    type: External
+        averageValue: 25000m
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment

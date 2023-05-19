@@ -18,6 +18,19 @@ spec:
       labels:
         app: helloweb
     spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - helloweb 
+            topologyKey: kubernetes.io/hostname
+      nodeSelector:
+        cloud.google.com/gke-spot: "true"
+      serviceAccountName: helloweb
       containers:
       - image: helloweb:latest
         imagePullPolicy: Always
@@ -56,8 +69,8 @@ spec:
             cpu: 100m
             memory: 512Mi
           limits:
-            cpu: 1000m
-            memory: 2Gi
+            cpu: 250m
+            memory: 512Mi
         livenessProbe:
           httpGet:
             path: /healthz
@@ -73,13 +86,20 @@ spec:
         volumeMounts:
           - name: podinfo
             mountPath: /podinfo
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: topology.gke.io/zone
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchLabels:
+            app: helloweb
       volumes:
-        - name: podinfo
-          downwardAPI:
-            items:
-              - path: "labels"
-                fieldRef:
-                  fieldPath: metadata.labels
-              - path: "annotations"
-                fieldRef:
-                  fieldPath: metadata.annotations	
+      - name: podinfo
+        downwardAPI:
+          items:
+          - path: "labels"
+            fieldRef:
+              fieldPath: metadata.labels
+          - path: "annotations"
+            fieldRef:
+              fieldPath: metadata.annotations	

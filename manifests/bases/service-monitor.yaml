@@ -1,0 +1,13 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: helloweb-monitor
+  labels:
+    app: helloweb
+spec:
+  selector:
+    matchLabels:
+      app: helloweb
+  endpoints:
+  - port: http
+    interval: 30s

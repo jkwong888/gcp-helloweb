@@ -1,0 +1,13 @@
+apiVersion: monitoring.coreos.com/v1
+kind: Prometheus
+metadata:
+  name: prometheus
+  labels:
+    prometheus: prometheus
+spec:
+  image: gke.gcr.io/prometheus-engine/prometheus:v2.35.0-gmp.2-gke.0
+  replicas: 1
+  version: v2.35.0
+  serviceAccountName: prometheus
+  serviceMonitorNamespaceSelector: {}
+  serviceMonitorSelector: {}

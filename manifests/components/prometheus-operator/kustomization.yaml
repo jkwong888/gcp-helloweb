@@ -1,0 +1,5 @@
+resources:
+- https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/v0.65.1/bundle.yaml
+- namespace.yaml
+
+namespace: prometheus-operator

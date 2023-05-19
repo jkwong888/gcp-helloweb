@@ -3,11 +3,13 @@ resources:
 - namespace.yaml
 - deployment.yaml
 - service.yaml
+- serviceaccount.yaml
+- service-monitor.yaml
 
 images:
 - name: helloweb
   newName: gcr.io/jkwng-images/helloweb
-  newTag: "1.2.2"
+  newTag: "1.4.2"
 
 commonLabels:
   app: helloweb

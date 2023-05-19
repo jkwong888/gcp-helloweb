@@ -1,0 +1,16 @@
+variable "name" {}
+variable "region" {}
+variable "service_project_id" {}
+variable "network" {}
+variable "subnet" {}
+variable "private_cluster" {}
+variable "master_cidr" {}
+variable "pods_range_name" {}
+variable "services_range_name" {}
+variable "network_tag" {}
+variable "service_account" {}
+variable "default_nodepool_min_size" {}
+variable "default_nodepool_max_size" {}
+variable "default_nodepool_initial_size" {}
+variable "default_nodepool_machine_type" {}
+variable "default_nodepool_use_preemptible_nodes" {}

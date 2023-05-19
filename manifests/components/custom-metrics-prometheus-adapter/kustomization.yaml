@@ -1,0 +1,19 @@
+resources:
+- generated/prometheus-adapter-auth-reader-rb.yaml
+- generated/prometheus-adapter-cm.yaml
+- generated/prometheus-adapter-deployment.yaml
+- generated/prometheus-adapter-hpa-controller-crb.yaml
+- generated/prometheus-adapter-resource-reader-cr.yaml
+- generated/prometheus-adapter-resource-reader-crb.yaml
+- generated/prometheus-adapter-sa.yaml
+- generated/prometheus-adapter-server-resources-cr.yaml
+- generated/prometheus-adapter-svc.yaml
+- generated/prometheus-adapter-system-auth-delegator-crb.yaml
+- generated/v1beta1.custom.metrics.k8s.io-apiservice.yaml
+- namespace.yaml
+
+patchesStrategicMerge:
+- deployment-patch.yaml
+- prometheus-adapter-cm-patch.yaml
+
+namespace: prometheus

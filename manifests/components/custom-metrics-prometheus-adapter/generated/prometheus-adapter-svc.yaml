@@ -1,0 +1,23 @@
+# Source: prometheus-adapter/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  labels:    
+    helm.sh/chart: prometheus-adapter-4.2.0
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: metrics
+    app.kubernetes.io/part-of: prometheus-adapter
+    app.kubernetes.io/name: prometheus-adapter
+    app.kubernetes.io/instance: prometheus-adapter
+    app.kubernetes.io/version: "v0.10.0"
+  name: prometheus-adapter
+  namespace: default
+spec:
+  ports:
+  - port: 443
+    protocol: TCP
+    targetPort: https
+  selector:    
+    app.kubernetes.io/name: prometheus-adapter
+    app.kubernetes.io/instance: prometheus-adapter
+  type: ClusterIP

@@ -1,13 +1,13 @@
 module "autoneg-gcp" {
   depends_on = [
-    google_container_cluster.primary,
+    module.gke.cluster_id,
   ]
   source = "git@github.com:GoogleCloudPlatform/gke-autoneg-controller//terraform/gcp"
 
   shared_vpc = {
     project_id                = data.google_project.host_project.project_id
     subnetwork_region         = var.region
-    subnetwork_id             = google_container_cluster.primary.subnetwork
+    subnetwork_id             = module.gke.subnetwork_id
   }
   project_id                  = module.service_project.project_id
 

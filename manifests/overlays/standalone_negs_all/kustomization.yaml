@@ -9,8 +9,14 @@ configMapGenerator:
 - name: standalone-negs-backend-cm
   envs: [environment.properties]
 
-
 vars:
+- name: PROJECT_ID
+  objref:
+    kind: ConfigMap
+    name: standalone-negs-backend-cm
+    apiVersion: v1
+  fieldref:
+    fieldpath: data.PROJECT_ID
 - name: GLB_BACKEND_SERVICE_A
   objref:
     kind: ConfigMap

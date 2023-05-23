@@ -10,7 +10,6 @@ resources:
 - generated/prometheus-adapter-svc.yaml
 - generated/prometheus-adapter-system-auth-delegator-crb.yaml
 - generated/v1beta1.custom.metrics.k8s.io-apiservice.yaml
-- namespace.yaml
 
 patchesStrategicMerge:
 - deployment-patch.yaml

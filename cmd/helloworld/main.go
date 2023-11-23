@@ -20,18 +20,20 @@ package main
 import (
 	"context"
 	"net/http"
-	"os/signal"
-	"syscall"
 	"os"
+	"os/signal"
+	"strconv"
+	"syscall"
+	"time"
 
 	chi "github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
+	metadata "helloworld-http/pkg/gcp"
 	handler "helloworld-http/pkg/handler"
 	health "helloworld-http/pkg/health"
 	metrics "helloworld-http/pkg/metrics"
 	trace "helloworld-http/pkg/trace"
-	metadata "helloworld-http/pkg/gcp"
 )
 
 
@@ -64,6 +66,32 @@ func main() {
 		zap.S().Panicf("Failed to initialize trace: %v", err)
 	}
 	defer traceConfig.Shutdown(ctx)
+
+
+	startup_cpuloop, cpu_loop_exists := os.LookupEnv("STARTUP_CPULOOP_SECS")
+	if (cpu_loop_exists) {
+		busyloopSecs, err := strconv.Atoi(startup_cpuloop)
+		if err != nil {
+			zap.S().Panicf("Invalid value for STARTUP_CPULOOP_SECS: %v", startup_cpuloop)
+		}
+
+		zap.S().Infof("Busy Looping for %v seconds", busyloopSecs)
+		done := make(chan bool)
+
+		go func() {
+			for {
+				select {
+				case <-done:
+					return
+				default:
+					// do nothing
+				}
+			}
+		}()
+
+		time.Sleep(time.Duration(busyloopSecs) * time.Second)
+		done <- true
+	}
 
 	handler, err := handler.InitHandler(*logger, *traceConfig)
 	if err != nil {

@@ -1,0 +1,13 @@
+bases:
+- ../../bases
+
+patchesStrategicMerge:
+- helloweb-service-neg.yaml
+- deployment.yaml
+
+namespace: helloweb-hpa
+
+images:
+- name: helloweb
+  newName: gcr.io/jkwng-images/helloweb
+  newTag: "1.4.3"

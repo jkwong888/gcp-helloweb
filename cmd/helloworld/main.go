@@ -24,7 +24,6 @@ import (
 	"os/signal"
 	"strconv"
 	"syscall"
-	"time"
 
 	chi "github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
@@ -34,6 +33,7 @@ import (
 	health "helloworld-http/pkg/health"
 	metrics "helloworld-http/pkg/metrics"
 	trace "helloworld-http/pkg/trace"
+	util "helloworld-http/pkg/util"
 )
 
 
@@ -75,22 +75,8 @@ func main() {
 			zap.S().Panicf("Invalid value for STARTUP_CPULOOP_SECS: %v", startup_cpuloop)
 		}
 
-		zap.S().Infof("Busy Looping for %v seconds", busyloopSecs)
-		done := make(chan bool)
+		util.BusyLoop(ctx, busyloopSecs)
 
-		go func() {
-			for {
-				select {
-				case <-done:
-					return
-				default:
-					// do nothing
-				}
-			}
-		}()
-
-		time.Sleep(time.Duration(busyloopSecs) * time.Second)
-		done <- true
 	}
 
 	handler, err := handler.InitHandler(*logger, *traceConfig)
@@ -124,6 +110,8 @@ func main() {
 	metrics.InitMetrics()
 	zap.S().Debug("Metrics available at /metrics")
 	r.Get("/metrics", metrics.MetricsHandler())
+
+	r.Post("/busyloop", http.HandlerFunc(handler.BusyLoop))
 
 	// root handler which serves up responses
 	r.Get("/*", http.HandlerFunc(handler.Hello))

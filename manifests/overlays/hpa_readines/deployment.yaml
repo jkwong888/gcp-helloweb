@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: helloweb
+  name: helloweb
+spec:
+  template:
+    spec:
+      containers:
+      - image: helloweb:latest
+        name: helloworld
+        env:
+        - name: STARTUP_CPULOOP_SECS
+          value: "300"
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 360
+          periodSeconds: 3
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 360
+          periodSeconds: 3

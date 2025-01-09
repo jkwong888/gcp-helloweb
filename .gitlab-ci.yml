@@ -2,8 +2,8 @@ stages:
 - docker_build
 - docker_push
 
-build image:
-  stage: docker_build
+build image golang:
+  stage: docker_build_golang
   image:
     name: gcr.io/kaniko-project/executor:debug
     entrypoint: [""]
@@ -12,8 +12,8 @@ build image:
     - version.txt
   script:
     - mkdir -p /kaniko/.docker
-    - echo "{\"auths\":{\"$CI_REGISTRY\":{\"username\":\"$CI_REGISTRY_USER\",\"password\":\"$CI_REGISTRY_PASSWORD\"}}}" > /kaniko/.docker/config.json
-    - /kaniko/executor --context $CI_PROJECT_DIR --dockerfile $CI_PROJECT_DIR/Dockerfile --destination $CI_REGISTRY_IMAGE/$CI_PROJECT_NAME:$CI_COMMIT_SHA
+    - echo "{\"auths\":{\"$CI_REGISTRY\":{\"username\":\"${CI_REGISTRY_USER}\",\"password\":\"${CI_REGISTRY_PASSWORD}\"}}}" > /kaniko/.docker/config.json
+    - /kaniko/executor --context ${CI_PROJECT_DIR}/golang --dockerfile ${CI_PROJECT_DIR}/golang/Dockerfile --destination ${CI_REGISTRY_IMAGE}/${CI_PROJECT_NAME}-golang:${CI_COMMIT_SHA}
 
 push image:
   stage: docker_push
@@ -21,7 +21,7 @@ push image:
     name: gcr.io/go-containerregistry/crane:debug
     entrypoint: [""]
   needs:
-  - "build image"
+  - "build image golang"
   variables:
     GIT_STRATEGY: none
     VERSION: 2.0.0
@@ -35,8 +35,8 @@ push image:
     - pwd
     - find 
     - ls -al
-    - APP_VERSION=$(cat $CI_PROJECT_DIR/version.txt)
-    - crane auth login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
-    - crane cp $CI_REGISTRY_IMAGE/$CI_PROJECT_NAME:$CI_COMMIT_SHA gcr.io/jkwng-images/helloweb:$CI_COMMIT_SHA
-    - crane cp $CI_REGISTRY_IMAGE/$CI_PROJECT_NAME:$CI_COMMIT_SHA gcr.io/jkwng-images/helloweb:$APP_VERSION
-    - crane cp $CI_REGISTRY_IMAGE/$CI_PROJECT_NAME:$CI_COMMIT_SHA gcr.io/jkwng-images/helloweb:latest
+    - APP_VERSION=$(cat ${CI_PROJECT_DIR}/version.txt)
+    - crane auth login -u ${CI_REGISTRY_USER} -p ${CI_REGISTRY_PASSWORD} ${CI_REGISTRY}
+    - crane cp ${CI_REGISTRY_IMAGE}/${CI_PROJECT_NAME}:${CI_COMMIT_SHA} gcr.io/jkwng-images/helloweb-golang:${CI_COMMIT_SHA}
+    - crane cp ${CI_REGISTRY_IMAGE}/${CI_PROJECT_NAME}:${CI_COMMIT_SHA} gcr.io/jkwng-images/helloweb-golang:${APP_VERSION}
+    - crane cp ${CI_REGISTRY_IMAGE}/${CI_PROJECT_NAME}:${CI_COMMIT_SHA} gcr.io/jkwng-images/helloweb=golang:latest

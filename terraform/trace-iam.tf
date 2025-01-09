@@ -12,15 +12,7 @@ resource "google_service_account" "helloweb_sa" {
 }
 
 
-resource "google_service_account_iam_member" "helloweb_wi" {
-    depends_on = [
-      module.gke.cluster_id,
-    ]
-    for_each = google_service_account.helloweb_sa
-    service_account_id = each.value.id
-    role = "roles/iam.workloadIdentityUser"
-    member = "serviceAccount:${module.service_project.project_id}.svc.id.goog[${each.key}/${each.key}]"
-}
+
 
 resource "google_project_iam_member" "trace_writer" {
     for_each = google_service_account.helloweb_sa
